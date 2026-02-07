@@ -1,17 +1,11 @@
 build:
-  nix develop -c zig build
+  nix build .#zmx-libvterm
 
 check:
-  nix develop -c zig build check
+  nix run .#build -- check
 
 test:
-  nix develop -c zig build test
-
-build-nix:
-  nix build
-
-build-libvterm:
-  nix build .#zmx-libvterm
+  nix run .#test
 
 # Update zig2nix dependency hashes from build.zig.zon
 zig2nix:
