@@ -536,7 +536,8 @@ fn list(cfg: *Cfg, short: bool) !void {
     while (try iter.next()) |entry| {
         const exists = sessionExists(dir, entry.name) catch continue;
         if (exists) {
-            const name = try alloc.dupe(u8, entry.name);
+            // Decode the filename to get the original session name
+            const name = try decodeSessionName(alloc, entry.name);
             errdefer alloc.free(name);
 
             const socket_path = try getSocketPath(alloc, cfg.socket_dir, entry.name);
@@ -608,11 +609,14 @@ fn detachAll(cfg: *Cfg) !void {
     var dir = try std.fs.openDirAbsolute(cfg.socket_dir, .{});
     defer dir.close();
 
+    const encoded_name = try encodeSessionName(alloc, session_name);
+    defer alloc.free(encoded_name);
+
     const socket_path = try getSocketPath(alloc, cfg.socket_dir, session_name);
     defer alloc.free(socket_path);
     const result = probeSession(alloc, socket_path) catch |err| {
         std.log.err("session unresponsive: {s}", .{@errorName(err)});
-        cleanupStaleSocket(dir, session_name);
+        cleanupStaleSocket(dir, encoded_name);
         return;
     };
     defer posix.close(result.fd);
@@ -630,7 +634,10 @@ fn kill(cfg: *Cfg, session_name: []const u8) !void {
     var dir = try std.fs.openDirAbsolute(cfg.socket_dir, .{});
     defer dir.close();
 
-    const exists = try sessionExists(dir, session_name);
+    const encoded_name = try encodeSessionName(alloc, session_name);
+    defer alloc.free(encoded_name);
+
+    const exists = try sessionExists(dir, encoded_name);
     if (!exists) {
         std.log.err("cannot kill session because it does not exist session_name={s}", .{session_name});
         return;
@@ -640,7 +647,7 @@ fn kill(cfg: *Cfg, session_name: []const u8) !void {
     defer alloc.free(socket_path);
     const result = probeSession(alloc, socket_path) catch |err| {
         std.log.err("session unresponsive: {s}", .{@errorName(err)});
-        cleanupStaleSocket(dir, session_name);
+        cleanupStaleSocket(dir, encoded_name);
         var buf: [4096]u8 = undefined;
         var w = std.fs.File.stdout().writer(&buf);
         w.interface.print("cleaned up stale session {s}\n", .{session_name}) catch {};
@@ -667,7 +674,10 @@ fn history(cfg: *Cfg, session_name: []const u8, format: terminal.Format) !void {
     var dir = try std.fs.openDirAbsolute(cfg.socket_dir, .{});
     defer dir.close();
 
-    const exists = try sessionExists(dir, session_name);
+    const encoded_name = try encodeSessionName(alloc, session_name);
+    defer alloc.free(encoded_name);
+
+    const exists = try sessionExists(dir, encoded_name);
     if (!exists) {
         std.log.err("session does not exist session_name={s}", .{session_name});
         return;
@@ -677,7 +687,7 @@ fn history(cfg: *Cfg, session_name: []const u8, format: terminal.Format) !void {
     defer alloc.free(socket_path);
     const result = probeSession(alloc, socket_path) catch |err| {
         std.log.err("session unresponsive: {s}", .{@errorName(err)});
-        cleanupStaleSocket(dir, session_name);
+        cleanupStaleSocket(dir, encoded_name);
         return;
     };
     defer posix.close(result.fd);
@@ -720,7 +730,10 @@ fn ensureSession(daemon: *Daemon) !EnsureSessionResult {
     var dir = try std.fs.openDirAbsolute(daemon.cfg.socket_dir, .{});
     defer dir.close();
 
-    const exists = try sessionExists(dir, daemon.session_name);
+    const encoded_name = try encodeSessionName(daemon.alloc, daemon.session_name);
+    defer daemon.alloc.free(encoded_name);
+
+    const exists = try sessionExists(dir, encoded_name);
     var should_create = !exists;
 
     if (exists) {
@@ -730,7 +743,7 @@ fn ensureSession(daemon: *Daemon) !EnsureSessionResult {
                 std.log.warn("session already exists, ignoring command session={s}", .{daemon.session_name});
             }
         } else |_| {
-            cleanupStaleSocket(dir, daemon.session_name);
+            cleanupStaleSocket(dir, encoded_name);
             should_create = true;
         }
     }
@@ -744,7 +757,7 @@ fn ensureSession(daemon: *Daemon) !EnsureSessionResult {
             _ = try posix.setsid();
 
             log_system.deinit();
-            const session_log_name = try std.fmt.allocPrint(daemon.alloc, "{s}.log", .{daemon.session_name});
+            const session_log_name = try std.fmt.allocPrint(daemon.alloc, "{s}.log", .{encoded_name});
             defer daemon.alloc.free(session_log_name);
             const session_log_path = try std.fs.path.join(daemon.alloc, &.{ daemon.cfg.log_dir, session_log_name });
             defer daemon.alloc.free(session_log_path);
@@ -752,14 +765,14 @@ fn ensureSession(daemon: *Daemon) !EnsureSessionResult {
 
             errdefer {
                 posix.close(server_sock_fd);
-                dir.deleteFile(daemon.session_name) catch {};
+                dir.deleteFile(encoded_name) catch {};
             }
             const pty_fd = try spawnPty(daemon);
             defer {
                 posix.close(pty_fd);
                 posix.close(server_sock_fd);
                 std.log.info("deleting socket file session_name={s}", .{daemon.session_name});
-                dir.deleteFile(daemon.session_name) catch |err| {
+                dir.deleteFile(encoded_name) catch |err| {
                     std.log.warn("failed to delete socket file err={s}", .{@errorName(err)});
                 };
             }
@@ -1410,12 +1423,51 @@ fn createSocket(fname: []const u8) !i32 {
     return fd;
 }
 
+const hex_chars = "0123456789ABCDEF";
+
+/// Returns true for characters that are safe in filenames (don't need encoding).
+fn isFilenameSafe(ch: u8) bool {
+    return ch != '/' and ch != '\\' and ch != '%' and ch != 0;
+}
+
+/// Encodes a session name to be filesystem-safe using percent-encoding.
+pub fn encodeSessionName(alloc: std.mem.Allocator, session_name: []const u8) ![]const u8 {
+    var buf = try std.ArrayList(u8).initCapacity(alloc, session_name.len * 3);
+    errdefer buf.deinit(alloc);
+    for (session_name) |ch| {
+        if (isFilenameSafe(ch)) {
+            try buf.append(alloc, ch);
+        } else {
+            try buf.appendSlice(alloc, &[_]u8{ '%', hex_chars[ch >> 4], hex_chars[ch & 0x0F] });
+        }
+    }
+    return buf.toOwnedSlice(alloc);
+}
+
+/// Decodes a percent-encoded session name back to the original.
+pub fn decodeSessionName(alloc: std.mem.Allocator, encoded_name: []const u8) ![]const u8 {
+    const buf = try alloc.dupe(u8, encoded_name);
+    const decoded = std.Uri.percentDecodeInPlace(buf);
+    // percentDecodeInPlace returns a slice starting at an offset within buf.
+    // We need to copy the decoded data to the start and resize.
+    if (decoded.ptr != buf.ptr) {
+        std.mem.copyForwards(u8, buf[0..decoded.len], decoded);
+    }
+    if (decoded.len < buf.len) {
+        return alloc.realloc(buf, decoded.len);
+    }
+    return buf[0..decoded.len];
+}
+
 pub fn getSocketPath(alloc: std.mem.Allocator, socket_dir: []const u8, session_name: []const u8) ![]const u8 {
+    const encoded_name = try encodeSessionName(alloc, session_name);
+    defer alloc.free(encoded_name);
+
     const dir = socket_dir;
-    const fname = try alloc.alloc(u8, dir.len + session_name.len + 1);
+    const fname = try alloc.alloc(u8, dir.len + encoded_name.len + 1);
     @memcpy(fname[0..dir.len], dir);
     @memcpy(fname[dir.len .. dir.len + 1], "/");
-    @memcpy(fname[dir.len + 1 ..], session_name);
+    @memcpy(fname[dir.len + 1 ..], encoded_name);
     return fname;
 }
 
@@ -1569,5 +1621,78 @@ test "writeSessionLine formats output for current session and short output" {
 
         try writeSessionLine(&builder.writer, case.session, case.short, case.current_session);
         try std.testing.expectEqualStrings(case.expected, builder.writer.buffered());
+    }
+}
+
+test "encodeSessionName encodes slashes and percent signs" {
+    const alloc = std.testing.allocator;
+
+    // Simple name without special chars passes through unchanged
+    const simple = try encodeSessionName(alloc, "my-session");
+    defer alloc.free(simple);
+    try std.testing.expectEqualStrings("my-session", simple);
+
+    // Slashes are encoded
+    const with_slash = try encodeSessionName(alloc, "projects/web");
+    defer alloc.free(with_slash);
+    try std.testing.expectEqualStrings("projects%2Fweb", with_slash);
+
+    // Multiple slashes
+    const multi_slash = try encodeSessionName(alloc, "a/b/c");
+    defer alloc.free(multi_slash);
+    try std.testing.expectEqualStrings("a%2Fb%2Fc", multi_slash);
+
+    // Percent signs are encoded to avoid ambiguity
+    const with_percent = try encodeSessionName(alloc, "100%done");
+    defer alloc.free(with_percent);
+    try std.testing.expectEqualStrings("100%25done", with_percent);
+
+    // Backslashes are encoded
+    const with_backslash = try encodeSessionName(alloc, "win\\path");
+    defer alloc.free(with_backslash);
+    try std.testing.expectEqualStrings("win%5Cpath", with_backslash);
+}
+
+test "decodeSessionName decodes percent-encoded characters" {
+    const alloc = std.testing.allocator;
+
+    // Simple name passes through unchanged
+    const simple = try decodeSessionName(alloc, "my-session");
+    defer alloc.free(simple);
+    try std.testing.expectEqualStrings("my-session", simple);
+
+    // Encoded slash is decoded
+    const with_slash = try decodeSessionName(alloc, "projects%2Fweb");
+    defer alloc.free(with_slash);
+    try std.testing.expectEqualStrings("projects/web", with_slash);
+
+    // Multiple encoded slashes
+    const multi_slash = try decodeSessionName(alloc, "a%2Fb%2Fc");
+    defer alloc.free(multi_slash);
+    try std.testing.expectEqualStrings("a/b/c", multi_slash);
+
+    // Encoded percent sign
+    const with_percent = try decodeSessionName(alloc, "100%25done");
+    defer alloc.free(with_percent);
+    try std.testing.expectEqualStrings("100%done", with_percent);
+}
+
+test "encodeSessionName and decodeSessionName are inverse operations" {
+    const alloc = std.testing.allocator;
+    const test_cases = [_][]const u8{
+        "simple",
+        "with/slash",
+        "multi/level/path",
+        "percent%sign",
+        "back\\slash",
+        "mixed/path%with\\all",
+    };
+
+    for (test_cases) |original| {
+        const encoded = try encodeSessionName(alloc, original);
+        defer alloc.free(encoded);
+        const decoded = try decodeSessionName(alloc, encoded);
+        defer alloc.free(decoded);
+        try std.testing.expectEqualStrings(original, decoded);
     }
 }
