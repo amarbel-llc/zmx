@@ -34,6 +34,10 @@
           zigBuildFlags = [ "-Doptimize=ReleaseSafe" "-Dbackend=libvterm" ];
           zigPreferMusl = true;
           buildInputs = [ pkgs.libvterm-neovim ];
+          # Remove ghostty dependency from zon file - not needed for libvterm backend
+          postPatch = ''
+            sed -i '/.ghostty = .{/,/},/d' build.zig.zon
+          '';
         };
       in
       {

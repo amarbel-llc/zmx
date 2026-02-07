@@ -31,7 +31,7 @@ pub const LibvtermBackend = struct {
 
         c.vterm_set_utf8(vt, 1);
 
-        const screen = c.vterm_obtain_screen(vt);
+        const screen = c.vterm_obtain_screen(vt) orelse return error.OutOfMemory;
         c.vterm_screen_reset(screen, 1);
 
         return .{
@@ -80,92 +80,71 @@ pub const LibvtermBackend = struct {
     }
 
     fn serializePlain(self: *LibvtermBackend, alloc: std.mem.Allocator) ?[]const u8 {
-        var buf = std.ArrayList(u8).init(alloc);
-        errdefer buf.deinit();
+        // Use vterm_screen_get_text to extract text row by row
+        const max_line_len = self.cols * 4 + 1; // UTF-8 max 4 bytes per char + newline
+        var line_buf = alloc.alloc(u8, max_line_len) catch return null;
+        defer alloc.free(line_buf);
+
+        var buf: std.ArrayList(u8) = .empty;
+        errdefer buf.deinit(alloc);
 
         var row: c_int = 0;
         while (row < self.rows) : (row += 1) {
-            var col: c_int = 0;
-            var last_non_space: usize = 0;
-            const row_start = buf.items.len;
+            const rect = c.VTermRect{
+                .start_row = row,
+                .end_row = row + 1,
+                .start_col = 0,
+                .end_col = self.cols,
+            };
 
-            while (col < self.cols) : (col += 1) {
-                var cell: c.VTermScreenCell = undefined;
-                const pos = c.VTermPos{ .row = row, .col = col };
-                _ = c.vterm_screen_get_cell(self.screen, pos, &cell);
-
-                // Get the character (handle wide chars)
-                if (cell.chars[0] != 0) {
-                    var char_buf: [4]u8 = undefined;
-                    const len = std.unicode.utf8Encode(@intCast(cell.chars[0]), &char_buf) catch 1;
-                    buf.appendSlice(char_buf[0..len]) catch return null;
-                    if (cell.chars[0] != ' ') {
-                        last_non_space = buf.items.len;
-                    }
-                } else {
-                    buf.append(' ') catch return null;
+            const len = c.vterm_screen_get_text(self.screen, line_buf.ptr, max_line_len, rect);
+            if (len > 0) {
+                // Trim trailing spaces
+                var end: usize = @intCast(len);
+                while (end > 0 and line_buf[end - 1] == ' ') {
+                    end -= 1;
                 }
+                buf.appendSlice(alloc, line_buf[0..end]) catch return null;
             }
-
-            // Trim trailing spaces
-            buf.shrinkRetainingCapacity(if (last_non_space > row_start) last_non_space else row_start);
-            buf.append('\n') catch return null;
+            buf.append(alloc, '\n') catch return null;
         }
 
-        return buf.toOwnedSlice() catch null;
+        return buf.toOwnedSlice(alloc) catch null;
     }
 
     fn serializeScreen(self: *LibvtermBackend, alloc: std.mem.Allocator, include_cursor: bool) ?[]const u8 {
-        var buf = std.ArrayList(u8).init(alloc);
-        errdefer buf.deinit();
+        // For VT serialization without cell access, we use a simpler approach:
+        // Just output the text content with cursor positioning
+        // Note: This doesn't preserve colors/attributes due to libvterm struct limitations
 
-        var last_fg: c.VTermColor = undefined;
-        var last_bg: c.VTermColor = undefined;
-        var last_attrs: c.VTermScreenCellAttrs = undefined;
-        var has_style = false;
+        var buf: std.ArrayList(u8) = .empty;
+        errdefer buf.deinit(alloc);
 
         // Clear screen and home cursor
-        buf.appendSlice("\x1b[2J\x1b[H") catch return null;
+        buf.appendSlice(alloc, "\x1b[2J\x1b[H") catch return null;
+
+        const max_line_len = self.cols * 4 + 1;
+        var line_buf = alloc.alloc(u8, max_line_len) catch return null;
+        defer alloc.free(line_buf);
 
         var row: c_int = 0;
         while (row < self.rows) : (row += 1) {
             if (row > 0) {
-                buf.appendSlice("\r\n") catch return null;
+                buf.appendSlice(alloc, "\r\n") catch return null;
             }
 
-            var col: c_int = 0;
-            while (col < self.cols) : (col += 1) {
-                var cell: c.VTermScreenCell = undefined;
-                const pos = c.VTermPos{ .row = row, .col = col };
-                _ = c.vterm_screen_get_cell(self.screen, pos, &cell);
+            const rect = c.VTermRect{
+                .start_row = row,
+                .end_row = row + 1,
+                .start_col = 0,
+                .end_col = self.cols,
+            };
 
-                // Check if style changed
-                const style_changed = !has_style or
-                    !colorsEqual(cell.fg, last_fg) or
-                    !colorsEqual(cell.bg, last_bg) or
-                    !attrsEqual(cell.attrs, last_attrs);
-
-                if (style_changed) {
-                    self.emitSGR(&buf, &cell) catch return null;
-                    last_fg = cell.fg;
-                    last_bg = cell.bg;
-                    last_attrs = cell.attrs;
-                    has_style = true;
-                }
-
-                // Output character
-                if (cell.chars[0] != 0) {
-                    var char_buf: [4]u8 = undefined;
-                    const len = std.unicode.utf8Encode(@intCast(cell.chars[0]), &char_buf) catch 1;
-                    buf.appendSlice(char_buf[0..len]) catch return null;
-                } else {
-                    buf.append(' ') catch return null;
-                }
+            const len = c.vterm_screen_get_text(self.screen, line_buf.ptr, max_line_len, rect);
+            if (len > 0) {
+                buf.appendSlice(alloc, line_buf[0..@intCast(len)]) catch return null;
             }
         }
-
-        // Reset attributes
-        buf.appendSlice("\x1b[0m") catch return null;
 
         // Position cursor
         if (include_cursor) {
@@ -175,94 +154,9 @@ pub const LibvtermBackend = struct {
                 cursor.y + 1,
                 cursor.x + 1,
             }) catch return null;
-            buf.appendSlice(cursor_seq) catch return null;
+            buf.appendSlice(alloc, cursor_seq) catch return null;
         }
 
-        return buf.toOwnedSlice() catch null;
-    }
-
-    fn emitSGR(self: *LibvtermBackend, buf: *std.ArrayList(u8), cell: *c.VTermScreenCell) !void {
-        _ = self;
-        // Reset and build new style
-        try buf.appendSlice("\x1b[0");
-
-        // Attributes
-        if (cell.attrs.bold != 0) try buf.appendSlice(";1");
-        if (cell.attrs.italic != 0) try buf.appendSlice(";3");
-        if (cell.attrs.underline != 0) try buf.appendSlice(";4");
-        if (cell.attrs.blink != 0) try buf.appendSlice(";5");
-        if (cell.attrs.reverse != 0) try buf.appendSlice(";7");
-        if (cell.attrs.strike != 0) try buf.appendSlice(";9");
-
-        // Foreground color
-        if (c.VTERM_COLOR_IS_RGB(&cell.fg)) {
-            var color_buf: [20]u8 = undefined;
-            const seq = std.fmt.bufPrint(&color_buf, ";38;2;{d};{d};{d}", .{
-                cell.fg.rgb.red,
-                cell.fg.rgb.green,
-                cell.fg.rgb.blue,
-            }) catch return;
-            try buf.appendSlice(seq);
-        } else if (c.VTERM_COLOR_IS_INDEXED(&cell.fg)) {
-            var color_buf: [12]u8 = undefined;
-            const idx = cell.fg.indexed.idx;
-            if (idx < 8) {
-                const seq = std.fmt.bufPrint(&color_buf, ";{d}", .{30 + idx}) catch return;
-                try buf.appendSlice(seq);
-            } else if (idx < 16) {
-                const seq = std.fmt.bufPrint(&color_buf, ";{d}", .{90 + idx - 8}) catch return;
-                try buf.appendSlice(seq);
-            } else {
-                const seq = std.fmt.bufPrint(&color_buf, ";38;5;{d}", .{idx}) catch return;
-                try buf.appendSlice(seq);
-            }
-        }
-
-        // Background color
-        if (c.VTERM_COLOR_IS_RGB(&cell.bg)) {
-            var color_buf: [20]u8 = undefined;
-            const seq = std.fmt.bufPrint(&color_buf, ";48;2;{d};{d};{d}", .{
-                cell.bg.rgb.red,
-                cell.bg.rgb.green,
-                cell.bg.rgb.blue,
-            }) catch return;
-            try buf.appendSlice(seq);
-        } else if (c.VTERM_COLOR_IS_INDEXED(&cell.bg)) {
-            var color_buf: [12]u8 = undefined;
-            const idx = cell.bg.indexed.idx;
-            if (idx < 8) {
-                const seq = std.fmt.bufPrint(&color_buf, ";{d}", .{40 + idx}) catch return;
-                try buf.appendSlice(seq);
-            } else if (idx < 16) {
-                const seq = std.fmt.bufPrint(&color_buf, ";{d}", .{100 + idx - 8}) catch return;
-                try buf.appendSlice(seq);
-            } else {
-                const seq = std.fmt.bufPrint(&color_buf, ";48;5;{d}", .{idx}) catch return;
-                try buf.appendSlice(seq);
-            }
-        }
-
-        try buf.append('m');
+        return buf.toOwnedSlice(alloc) catch null;
     }
 };
-
-fn colorsEqual(a: c.VTermColor, b: c.VTermColor) bool {
-    if (c.VTERM_COLOR_IS_RGB(&a) and c.VTERM_COLOR_IS_RGB(&b)) {
-        return a.rgb.red == b.rgb.red and
-            a.rgb.green == b.rgb.green and
-            a.rgb.blue == b.rgb.blue;
-    }
-    if (c.VTERM_COLOR_IS_INDEXED(&a) and c.VTERM_COLOR_IS_INDEXED(&b)) {
-        return a.indexed.idx == b.indexed.idx;
-    }
-    return false;
-}
-
-fn attrsEqual(a: c.VTermScreenCellAttrs, b: c.VTermScreenCellAttrs) bool {
-    return a.bold == b.bold and
-        a.italic == b.italic and
-        a.underline == b.underline and
-        a.blink == b.blink and
-        a.reverse == b.reverse and
-        a.strike == b.strike;
-}

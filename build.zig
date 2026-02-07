@@ -35,7 +35,11 @@ pub fn build(b: *std.Build) void {
     const options = b.addOptions();
     options.addOption([]const u8, "version", version);
     options.addOption([]const u8, "git_sha", git_sha);
-    options.addOption([]const u8, "ghostty_version", @import("build.zig.zon").dependencies.ghostty.hash);
+    const ghostty_version: []const u8 = if (@hasField(@TypeOf(@import("build.zig.zon").dependencies), "ghostty"))
+        @import("build.zig.zon").dependencies.ghostty.hash
+    else
+        "(libvterm backend)";
+    options.addOption([]const u8, "ghostty_version", ghostty_version);
     options.addOption(Backend, "backend", backend);
 
     const exe_mod = b.createModule(.{
