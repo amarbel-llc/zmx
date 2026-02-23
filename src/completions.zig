@@ -29,7 +29,7 @@ const bash_completions =
     \\  cur="${COMP_WORDS[COMP_CWORD]}"
     \\  prev="${COMP_WORDS[COMP_CWORD-1]}"
     \\
-    \\  local commands="attach run detach detach-all list completions kill history version help"
+    \\  local commands="attach run detach detach-all fork list completions kill history version help"
     \\
     \\  if [[ $COMP_CWORD -eq 1 ]]; then
     \\    COMPREPLY=($(compgen -W "$commands" -- "$cur"))
@@ -74,6 +74,7 @@ const zsh_completions =
     \\        'run:Send command without attaching'
     \\        'detach:Detach all clients from current or named session'
     \\        'detach-all:Detach all clients from all sessions'
+    \\        'fork:Fork current session with same command'
     \\        'list:List active sessions'
     \\        'completions:Shell completion scripts'
     \\        'kill:Kill a session'
@@ -119,13 +120,14 @@ const zsh_completions =
 const fish_completions =
     \\complete -c zmx -f
     \\
-    \\set -l subcommands attach run detach detach-all list completions kill history version help
+    \\set -l subcommands attach run detach detach-all fork list completions kill history version help
     \\set -l no_subcmd "not __fish_seen_subcommand_from $subcommands"
     \\
     \\complete -c zmx -n $no_subcmd -a attach -d 'Attach to session, creating if needed'
     \\complete -c zmx -n $no_subcmd -a run -d 'Send command without attaching'
     \\complete -c zmx -n $no_subcmd -a detach -d 'Detach all clients from current or named session'
     \\complete -c zmx -n $no_subcmd -a detach-all -d 'Detach all clients from all sessions'
+    \\complete -c zmx -n $no_subcmd -a fork -d 'Fork current session with same command'
     \\complete -c zmx -n $no_subcmd -a list -d 'List active sessions'
     \\complete -c zmx -n $no_subcmd -a completions -d 'Shell completion scripts'
     \\complete -c zmx -n $no_subcmd -a kill -d 'Kill a session'
