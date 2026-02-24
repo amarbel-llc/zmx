@@ -415,7 +415,9 @@ pub fn main() !void {
         return list(&cfg, false);
     };
 
-    if (std.mem.eql(u8, command, "version") or std.mem.eql(u8, command, "v") or std.mem.eql(u8, command, "-v") or std.mem.eql(u8, command, "--version")) {
+    if (std.mem.eql(u8, command, "groups") or std.mem.eql(u8, command, "gs")) {
+        return listGroups(&cfg);
+    } else if (std.mem.eql(u8, command, "version") or std.mem.eql(u8, command, "v") or std.mem.eql(u8, command, "-v") or std.mem.eql(u8, command, "--version")) {
         return printVersion();
     } else if (std.mem.eql(u8, command, "help") or std.mem.eql(u8, command, "h") or std.mem.eql(u8, command, "-h")) {
         return help();
@@ -672,6 +674,61 @@ fn list(cfg: *Cfg, short: bool) !void {
         try writeSessionLine(&w.interface, session, short, current_session);
         try w.interface.flush();
     }
+}
+
+fn listGroups(cfg: *Cfg) !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const alloc = gpa.allocator();
+
+    var base_dir = std.fs.openDirAbsolute(cfg.socket_base, .{ .iterate = true }) catch |err| switch (err) {
+        error.FileNotFound => {
+            return;
+        },
+        else => return err,
+    };
+    defer base_dir.close();
+
+    var groups = try std.ArrayList([]const u8).initCapacity(alloc, 8);
+    defer {
+        for (groups.items) |name| alloc.free(name);
+        groups.deinit(alloc);
+    }
+
+    var iter = base_dir.iterate();
+    while (try iter.next()) |entry| {
+        if (entry.kind != .directory) continue;
+
+        var group_dir = base_dir.openDir(entry.name, .{ .iterate = true }) catch continue;
+        defer group_dir.close();
+
+        var group_iter = group_dir.iterate();
+        var has_sockets = false;
+        while (try group_iter.next()) |sub_entry| {
+            if (sub_entry.kind == .unix_domain_socket or sub_entry.kind == .file) {
+                has_sockets = true;
+                break;
+            }
+        }
+
+        if (has_sockets) {
+            try groups.append(alloc, try alloc.dupe(u8, entry.name));
+        }
+    }
+
+    const S = struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.order(u8, a, b) == .lt;
+        }
+    };
+    std.mem.sort([]const u8, groups.items, {}, S.lessThan);
+
+    var buf: [4096]u8 = undefined;
+    var w = std.fs.File.stdout().writer(&buf);
+    for (groups.items) |name| {
+        try w.interface.print("{s}\n", .{name});
+    }
+    try w.interface.flush();
 }
 
 fn detachAll(cfg: *Cfg) !void {
