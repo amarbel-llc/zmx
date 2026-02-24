@@ -1583,6 +1583,9 @@ fn spawnPty(daemon: *Daemon) !c_int {
         const session_env = try std.fmt.allocPrint(daemon.alloc, "ZMX_SESSION={s}\x00", .{daemon.session_name});
         _ = c.putenv(@ptrCast(session_env.ptr));
 
+        const group_env = try std.fmt.allocPrint(daemon.alloc, "ZMX_GROUP={s}\x00", .{daemon.cfg.group});
+        _ = c.putenv(@ptrCast(group_env.ptr));
+
         if (daemon.command) |cmd_args| {
             const alloc = std.heap.c_allocator;
             var argv_buf: [64:null]?[*:0]const u8 = undefined;
