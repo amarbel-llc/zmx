@@ -74,52 +74,90 @@ const Client = struct {
 };
 
 const Cfg = struct {
+    socket_base: []const u8,
+    log_base: []const u8,
+    group: []const u8,
     socket_dir: []const u8,
     log_dir: []const u8,
     max_scrollback: usize = 10_000_000,
 
-    pub fn init(alloc: std.mem.Allocator) !Cfg {
-        const tmpdir = std.mem.trimRight(u8, posix.getenv("TMPDIR") orelse "/tmp", "/");
-        const uid = posix.getuid();
+    pub fn init(alloc: std.mem.Allocator, group: []const u8) !Cfg {
+        const home = posix.getenv("HOME") orelse "/tmp";
 
-        const socket_dir: []const u8 = if (posix.getenv("ZMX_DIR")) |zmxdir|
+        const socket_base: []const u8 = if (posix.getenv("ZMX_DIR")) |zmxdir|
             try alloc.dupe(u8, zmxdir)
-        else if (posix.getenv("XDG_RUNTIME_DIR")) |xdg_runtime|
-            try std.fmt.allocPrint(alloc, "{s}/zmx", .{xdg_runtime})
+        else if (posix.getenv("XDG_STATE_HOME")) |xdg_state|
+            try std.fmt.allocPrint(alloc, "{s}/zmx", .{xdg_state})
         else
-            try std.fmt.allocPrint(alloc, "{s}/zmx-{d}", .{ tmpdir, uid });
+            try std.fmt.allocPrint(alloc, "{s}/.local/state/zmx", .{home});
+        errdefer alloc.free(socket_base);
+
+        const log_base: []const u8 = if (posix.getenv("ZMX_LOG_DIR")) |logdir|
+            try alloc.dupe(u8, logdir)
+        else if (posix.getenv("XDG_LOG_HOME")) |xdg_log|
+            try std.fmt.allocPrint(alloc, "{s}/zmx", .{xdg_log})
+        else
+            try std.fmt.allocPrint(alloc, "{s}/.local/logs/zmx", .{home});
+        errdefer alloc.free(log_base);
+
+        const owned_group = try alloc.dupe(u8, group);
+        errdefer alloc.free(owned_group);
+
+        const socket_dir = try std.fs.path.join(alloc, &.{ socket_base, owned_group });
         errdefer alloc.free(socket_dir);
 
-        const log_dir = try std.fmt.allocPrint(alloc, "{s}/logs", .{socket_dir});
+        const log_dir = try std.fs.path.join(alloc, &.{ log_base, owned_group });
         errdefer alloc.free(log_dir);
 
         var cfg = Cfg{
+            .socket_base = socket_base,
+            .log_base = log_base,
+            .group = owned_group,
             .socket_dir = socket_dir,
             .log_dir = log_dir,
         };
 
-        try cfg.mkdir();
+        try cfg.mkdirAll();
 
         return cfg;
     }
 
     pub fn deinit(self: *Cfg, alloc: std.mem.Allocator) void {
+        if (self.socket_base.len > 0) alloc.free(self.socket_base);
+        if (self.log_base.len > 0) alloc.free(self.log_base);
+        if (self.group.len > 0) alloc.free(self.group);
         if (self.socket_dir.len > 0) alloc.free(self.socket_dir);
         if (self.log_dir.len > 0) alloc.free(self.log_dir);
     }
 
-    pub fn mkdir(self: *Cfg) !void {
-        posix.mkdirat(posix.AT.FDCWD, self.socket_dir, 0o750) catch |err| switch (err) {
-            error.PathAlreadyExists => {},
-            else => return err,
-        };
-
-        posix.mkdirat(posix.AT.FDCWD, self.log_dir, 0o750) catch |err| switch (err) {
-            error.PathAlreadyExists => {},
-            else => return err,
-        };
+    fn mkdirAll(self: *Cfg) !void {
+        // Create base directories
+        try mkdirRecursive(self.socket_base);
+        try mkdirRecursive(self.log_base);
+        // Create group subdirectories
+        try mkdirRecursive(self.socket_dir);
+        try mkdirRecursive(self.log_dir);
     }
 };
+
+fn mkdirRecursive(path: []const u8) !void {
+    std.fs.makeDirAbsolute(path) catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        error.FileNotFound => {
+            // Parent doesn't exist, try creating it
+            if (std.fs.path.dirname(path)) |parent| {
+                try mkdirRecursive(parent);
+                std.fs.makeDirAbsolute(path) catch |e| switch (e) {
+                    error.PathAlreadyExists => {},
+                    else => return e,
+                };
+            } else {
+                return err;
+            }
+        },
+        else => return err,
+    };
+}
 
 const Daemon = struct {
     cfg: *Cfg,
@@ -340,10 +378,10 @@ pub fn main() !void {
     defer args.deinit();
     _ = args.skip(); // skip program name
 
-    var cfg = try Cfg.init(alloc);
+    var cfg = try Cfg.init(alloc, "default");
     defer cfg.deinit(alloc);
 
-    const log_path = try std.fs.path.join(alloc, &.{ cfg.log_dir, "zmx.log" });
+    const log_path = try std.fs.path.join(alloc, &.{ cfg.log_base, "zmx.log" });
     defer alloc.free(log_path);
     try log_system.init(alloc, log_path);
     defer log_system.deinit();
