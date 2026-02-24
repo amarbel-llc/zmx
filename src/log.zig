@@ -25,6 +25,7 @@ pub const LogSystem = struct {
 
     pub fn deinit(self: *LogSystem) void {
         if (self.file) |f| f.close();
+        self.file = null;
         if (self.path.len > 0) self.alloc.free(self.path);
     }
 
