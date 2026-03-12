@@ -627,7 +627,7 @@ fn list(cfg: *Cfg, short: bool) !void {
             const name = try decodeSessionName(alloc, entry.name);
             errdefer alloc.free(name);
 
-            const socket_path = try getSocketPath(alloc, cfg.socket_dir, entry.name);
+            const socket_path = try std.fs.path.join(alloc, &.{ cfg.socket_dir, entry.name });
             defer alloc.free(socket_path);
 
             const result = probeSession(alloc, socket_path) catch |err| {
@@ -781,7 +781,7 @@ fn detachAllSessions(cfg: *Cfg) !void {
         const exists = sessionExists(dir, entry.name) catch continue;
         if (!exists) continue;
 
-        const socket_path = getSocketPath(alloc, cfg.socket_dir, entry.name) catch continue;
+        const socket_path = std.fs.path.join(alloc, &.{ cfg.socket_dir, entry.name }) catch continue;
         defer alloc.free(socket_path);
 
         const result = probeSession(alloc, socket_path) catch {
@@ -1812,6 +1812,16 @@ pub fn getSocketPath(alloc: std.mem.Allocator, socket_dir: []const u8, session_n
     @memcpy(fname[0..dir.len], dir);
     @memcpy(fname[dir.len .. dir.len + 1], "/");
     @memcpy(fname[dir.len + 1 ..], encoded_name);
+
+    const max_path = comptime (posix.sockaddr.un{ .family = posix.AF.UNIX, .path = undefined }).path.len - 1;
+    if (fname.len > max_path) {
+        std.log.err("socket path too long ({d} bytes, max {d}): {s}", .{
+            fname.len, max_path, fname,
+        });
+        alloc.free(fname);
+        return error.SocketPathTooLong;
+    }
+
     return fname;
 }
 
