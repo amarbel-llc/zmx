@@ -412,7 +412,7 @@ pub fn main() !void {
     defer log_system.deinit();
 
     const command = cmd orelse {
-        return list(&cfg, false);
+        return list(&cfg, .default);
     };
 
     if (std.mem.eql(u8, command, "groups") or std.mem.eql(u8, command, "gs")) {
@@ -422,8 +422,15 @@ pub fn main() !void {
     } else if (std.mem.eql(u8, command, "help") or std.mem.eql(u8, command, "h") or std.mem.eql(u8, command, "-h")) {
         return help();
     } else if (std.mem.eql(u8, command, "list") or std.mem.eql(u8, command, "l")) {
-        const short = if (args.next()) |arg| std.mem.eql(u8, arg, "--short") else false;
-        return list(&cfg, short);
+        var list_format: ListFormat = .default;
+        while (args.next()) |arg| {
+            if (std.mem.eql(u8, arg, "--short")) {
+                list_format = .short;
+            } else if (std.mem.eql(u8, arg, "--json") or std.mem.eql(u8, arg, "-j")) {
+                list_format = .json;
+            }
+        }
+        return list(&cfg, list_format);
     } else if (std.mem.eql(u8, command, "completions") or std.mem.eql(u8, command, "c")) {
         const arg = args.next() orelse return;
         const shell = completions.Shell.fromString(arg) orelse return;
@@ -563,7 +570,7 @@ fn help() !void {
         \\  [d]etach [<name>]              Detach all clients from current or named session
         \\  [da] detach-all               Detach all clients from all sessions in group
         \\  [gs] groups                   List active session groups
-        \\  [l]ist [--short]              List active sessions in group
+        \\  [l]ist [--short] [-j|--json]  List active sessions in group
         \\  [c]ompletions <shell>         Completion scripts for shell integration (bash, zsh, or fish)
         \\  [k]ill <name>                 Kill a session and all attached clients
         \\  [hi]story <name> [--vt|--html] Output session scrollback (--vt or --html for escape sequences)
@@ -591,9 +598,11 @@ const SessionEntry = struct {
     }
 };
 
+const ListFormat = enum { default, short, json };
+
 const current_arrow = "→";
 
-fn list(cfg: *Cfg, short: bool) !void {
+fn list(cfg: *Cfg, format: ListFormat) !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const alloc = gpa.allocator();
@@ -666,16 +675,31 @@ fn list(cfg: *Cfg, short: bool) !void {
     }
 
     if (sessions.items.len == 0) {
-        if (short) return;
-        try w.interface.print("no sessions found in {s}\n", .{cfg.socket_dir});
-        try w.interface.flush();
-        return;
+        switch (format) {
+            .short => return,
+            .json => {
+                try w.interface.print("[]\n", .{});
+                try w.interface.flush();
+                return;
+            },
+            .default => {
+                try w.interface.print("no sessions found in {s}\n", .{cfg.socket_dir});
+                try w.interface.flush();
+                return;
+            },
+        }
     }
 
     std.mem.sort(SessionEntry, sessions.items, {}, SessionEntry.lessThan);
 
+    if (format == .json) {
+        try writeJsonList(&w.interface, sessions.items, current_session);
+        try w.interface.flush();
+        return;
+    }
+
     for (sessions.items) |session| {
-        try writeSessionLine(&w.interface, session, short, current_session);
+        try writeSessionLine(&w.interface, session, format == .short, current_session);
         try w.interface.flush();
     }
 }
@@ -1897,6 +1921,66 @@ fn writeSessionLine(writer: *std.Io.Writer, session: SessionEntry, short: bool, 
     try writer.print("\n", .{});
 }
 
+fn writeJsonList(writer: *std.Io.Writer, sessions: []const SessionEntry, current_session: ?[]const u8) !void {
+    try writer.print("[", .{});
+    for (sessions, 0..) |session, i| {
+        if (i > 0) try writer.print(",", .{});
+        try writer.print("{{\"name\":", .{});
+        try writeJsonString(writer, session.name);
+        if (session.is_error) {
+            try writer.print(",\"error\":true,\"status\":", .{});
+            try writeJsonString(writer, session.error_name.?);
+        } else {
+            const is_current = if (current_session) |current|
+                std.mem.eql(u8, current, session.name)
+            else
+                false;
+            try writer.print(",\"pid\":{d},\"clients\":{d}", .{ session.pid.?, session.clients_len.? });
+            if (session.cwd) |cwd| {
+                try writer.print(",\"cwd\":", .{});
+                try writeJsonString(writer, cwd);
+            }
+            if (session.cmd) |cmd| {
+                try writer.print(",\"cmd\":", .{});
+                try writeJsonString(writer, cmd);
+            }
+            try writer.print(",\"current\":{s}", .{if (is_current) "true" else "false"});
+        }
+        try writer.print("}}", .{});
+    }
+    try writer.print("]\n", .{});
+}
+
+fn writeJsonString(writer: *std.Io.Writer, s: []const u8) !void {
+    try writer.print("\"", .{});
+    var last: usize = 0;
+    for (s, 0..) |ch, i| {
+        const replacement: ?[]const u8 = switch (ch) {
+            '"' => "\\\"",
+            '\\' => "\\\\",
+            '\n' => "\\n",
+            '\r' => "\\r",
+            '\t' => "\\t",
+            0x08 => "\\b",
+            0x0c => "\\f",
+            else => null,
+        };
+        if (replacement) |r| {
+            if (i > last) try writer.print("{s}", .{s[last..i]});
+            try writer.print("{s}", .{r});
+            last = i + 1;
+        } else if (ch < 0x20) {
+            if (i > last) try writer.print("{s}", .{s[last..i]});
+            const hex = "0123456789abcdef";
+            const esc: [6]u8 = .{ '\\', 'u', '0', '0', hex[ch >> 4], hex[ch & 0xf] };
+            try writer.print("{s}", .{&esc});
+            last = i + 1;
+        }
+    }
+    if (last < s.len) try writer.print("{s}", .{s[last..s.len]});
+    try writer.print("\"", .{});
+}
+
 /// Detects Kitty keyboard protocol escape sequence for Ctrl+\
 /// 92 = backslash, 5 = ctrl modifier, :1 = key press event
 fn isKittyCtrlBackslash(buf: []const u8) bool {
@@ -1976,6 +2060,69 @@ test "writeSessionLine formats output for current session and short output" {
         try writeSessionLine(&builder.writer, case.session, case.short, case.current_session);
         try std.testing.expectEqualStrings(case.expected, builder.writer.buffered());
     }
+}
+
+test "writeJsonString escapes special characters" {
+    const Case = struct {
+        input: []const u8,
+        expected: []const u8,
+    };
+
+    const cases = [_]Case{
+        .{ .input = "hello", .expected = "\"hello\"" },
+        .{ .input = "say \"hi\"", .expected = "\"say \\\"hi\\\"\"" },
+        .{ .input = "back\\slash", .expected = "\"back\\\\slash\"" },
+        .{ .input = "new\nline", .expected = "\"new\\nline\"" },
+        .{ .input = "tab\there", .expected = "\"tab\\there\"" },
+        .{ .input = "ctrl\x01char", .expected = "\"ctrl\\u0001char\"" },
+        .{ .input = "", .expected = "\"\"" },
+    };
+
+    for (cases) |case| {
+        var builder: std.Io.Writer.Allocating = .init(std.testing.allocator);
+        defer builder.deinit();
+
+        try writeJsonString(&builder.writer, case.input);
+        try std.testing.expectEqualStrings(case.expected, builder.writer.buffered());
+    }
+}
+
+test "writeJsonList formats sessions as JSON array" {
+    var builder: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer builder.deinit();
+
+    const sessions = [_]SessionEntry{
+        .{
+            .name = "dev",
+            .pid = 123,
+            .clients_len = 2,
+            .is_error = false,
+            .error_name = null,
+            .cmd = "bash",
+            .cwd = "/home/user",
+        },
+        .{
+            .name = "broken",
+            .pid = null,
+            .clients_len = null,
+            .is_error = true,
+            .error_name = "ConnectionRefused",
+        },
+    };
+
+    try writeJsonList(&builder.writer, &sessions, "dev");
+    try std.testing.expectEqualStrings(
+        "[{\"name\":\"dev\",\"pid\":123,\"clients\":2,\"cwd\":\"/home/user\",\"cmd\":\"bash\",\"current\":true},{\"name\":\"broken\",\"error\":true,\"status\":\"ConnectionRefused\"}]\n",
+        builder.writer.buffered(),
+    );
+}
+
+test "writeJsonList outputs empty array when no sessions" {
+    var builder: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer builder.deinit();
+
+    try writeJsonList(&builder.writer, &.{}, null);
+    try std.testing.expectEqualStrings("[]\n", builder.writer.buffered());
 }
 
 test "encodeSessionName encodes slashes and percent signs" {

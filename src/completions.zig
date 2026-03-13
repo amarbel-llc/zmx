@@ -73,7 +73,7 @@ const bash_completions =
     \\      COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur"))
     \\      ;;
     \\    list)
-    \\      COMPREPLY=($(compgen -W "--short" -- "$cur"))
+    \\      COMPREPLY=($(compgen -W "--short --json -j" -- "$cur"))
     \\      ;;
     \\    *)
     \\      ;;
@@ -123,7 +123,7 @@ const zsh_completions =
     \\          _values 'shell' 'bash' 'zsh' 'fish'
     \\          ;;
     \\        list|l)
-    \\          _values 'options' '--short'
+    \\          _values 'options' '--short' '--json' '-j'
     \\          ;;
     \\      esac
     \\      ;;
@@ -182,4 +182,5 @@ const fish_completions =
     \\complete -c zmx -n "__fish_seen_subcommand_from completions" -a 'bash zsh fish' -d 'Shell'
     \\
     \\complete -c zmx -n "__fish_seen_subcommand_from list" -l short -d 'Short output'
+    \\complete -c zmx -n "__fish_seen_subcommand_from list" -l json -s j -d 'JSON output'
 ;
