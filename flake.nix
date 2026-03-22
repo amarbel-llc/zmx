@@ -19,7 +19,7 @@
       utils,
       ...
     }:
-    (utils.lib.eachDefaultSystem (
+    (utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (
       system:
       let
         env = zig2nix.outputs.zig-env.${system} {
