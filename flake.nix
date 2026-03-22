@@ -76,7 +76,10 @@
         };
 
         devShells.default = env.mkShell {
-          buildInputs = [ pkgs.libvterm-neovim ];
+          buildInputs = [
+            pkgs.just
+            pkgs.libvterm-neovim
+          ];
         };
       }
     ));
