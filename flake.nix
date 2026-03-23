@@ -57,10 +57,9 @@
             program = "${zmx-libvterm}/bin/zmx";
           };
 
-          # Dev apps default to ghostty backend (vendored in deps/)
-          build = env.app [ ] "zig build \"$@\"";
+          build = env.app [ ] "zig build -Dbackend=libvterm \"$@\"";
 
-          test = env.app [ ] "zig build test -- \"$@\"";
+          test = env.app [ ] "zig build -Dbackend=libvterm test -- \"$@\"";
         };
 
         devShells.default = env.mkShell {
