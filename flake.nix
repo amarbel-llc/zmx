@@ -19,7 +19,7 @@
       utils,
       ...
     }:
-    (utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (
+    (utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ] (
       system:
       let
         env = zig2nix.outputs.zig-env.${system} {
@@ -30,6 +30,7 @@
       with builtins;
       with pkgs.lib;
       let
+        isDarwin = pkgs.stdenv.isDarwin;
         zmx-package = env.package {
           src = cleanSource ./.;
           zigBuildFlags = [ "-Doptimize=ReleaseSafe" ];
@@ -52,27 +53,32 @@
               --prefix DYLD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath [ pkgs.libvterm-neovim ]}
           '';
         };
+        defaultPackage = if isDarwin then zmx-libvterm else zmx-package;
       in
       {
         packages = {
-          zmx = zmx-package;
           zmx-libvterm = zmx-libvterm;
-          default = zmx-package;
+          default = defaultPackage;
+        }
+        // optionalAttrs (!isDarwin) {
+          zmx = zmx-package;
         };
 
         apps = {
-          zmx = {
-            type = "app";
-            program = "${zmx-package}/bin/zmx";
-          };
           default = {
             type = "app";
-            program = "${zmx-package}/bin/zmx";
+            program = "${defaultPackage}/bin/zmx";
           };
 
           build = env.app [ ] "zig build \"$@\"";
 
           test = env.app [ ] "zig build test -- \"$@\"";
+        }
+        // optionalAttrs (!isDarwin) {
+          zmx = {
+            type = "app";
+            program = "${zmx-package}/bin/zmx";
+          };
         };
 
         devShells.default = env.mkShell {
