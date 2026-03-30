@@ -97,7 +97,7 @@ const Cfg = struct {
         else if (posix.getenv("XDG_LOG_HOME")) |xdg_log|
             try std.fmt.allocPrint(alloc, "{s}/zmx", .{xdg_log})
         else
-            try std.fmt.allocPrint(alloc, "{s}/.local/logs/zmx", .{home});
+            try std.fmt.allocPrint(alloc, "{s}/.local/log/zmx", .{home});
         errdefer alloc.free(log_base);
 
         const owned_group = try alloc.dupe(u8, group);
