@@ -467,15 +467,22 @@ pub fn main() !void {
         }
         return history(&cfg, session_name.?, format);
     } else if (std.mem.eql(u8, command, "attach") or std.mem.eql(u8, command, "a")) {
-        const session_name = args.next() orelse {
-            return error.SessionNameRequired;
-        };
-
+        var detach_flag = false;
+        var session_name: ?[]const u8 = null;
+        var command_started = false;
         var command_args: std.ArrayList([]const u8) = .empty;
         defer command_args.deinit(alloc);
         while (args.next()) |arg| {
-            try command_args.append(alloc, arg);
+            if (!command_started and std.mem.eql(u8, arg, "--detach")) {
+                detach_flag = true;
+            } else if (!command_started and session_name == null) {
+                session_name = arg;
+            } else {
+                command_started = true;
+                try command_args.append(alloc, arg);
+            }
         }
+        const name = session_name orelse return error.SessionNameRequired;
 
         const clients = try std.ArrayList(*Client).initCapacity(alloc, 10);
         var spawn_command: ?[][]const u8 = null;
@@ -491,15 +498,15 @@ pub fn main() !void {
             .cfg = &cfg,
             .alloc = alloc,
             .clients = clients,
-            .session_name = session_name,
+            .session_name = name,
             .socket_path = undefined,
             .pid = undefined,
             .command = spawn_command,
             .cwd = cwd,
         };
-        daemon.socket_path = try getSocketPath(alloc, cfg.socket_dir, session_name);
+        daemon.socket_path = try getSocketPath(alloc, cfg.socket_dir, name);
         std.log.info("socket path={s}", .{daemon.socket_path});
-        return attach(&daemon);
+        return attach(&daemon, detach_flag);
     } else if (std.mem.eql(u8, command, "run") or std.mem.eql(u8, command, "r")) {
         const session_name = args.next() orelse {
             return error.SessionNameRequired;
@@ -566,7 +573,9 @@ fn help() !void {
         \\  -g, --group <name>            Session group (default: "default", or $ZMX_GROUP)
         \\
         \\Commands:
-        \\  [a]ttach <name> [command...]  Attach to session, creating session if needed
+        \\  [a]ttach <name> [command...] [--detach]
+        \\                                Attach to session, creating session if needed
+        \\                                (--detach: create session without attaching)
         \\  [f]ork [<name>]               Fork current session (same cmd + cwd) into a new session
         \\  [r]un <name> [command...]     Send command without attaching, creating session if needed
         \\  [d]etach [<name>]              Detach all clients from current or named session
@@ -1156,13 +1165,25 @@ fn ensureSession(daemon: *Daemon) !EnsureSessionResult {
     return .{ .created = false, .is_daemon = false };
 }
 
-fn attach(daemon: *Daemon) !void {
-    if (std.posix.getenv("ZMX_SESSION")) |_| {
-        return error.CannotAttachToSessionInSession;
+fn attach(daemon: *Daemon, detach: bool) !void {
+    if (!detach) {
+        if (std.posix.getenv("ZMX_SESSION")) |_| {
+            return error.CannotAttachToSessionInSession;
+        }
     }
 
     const result = try ensureSession(daemon);
     if (result.is_daemon) return;
+
+    if (detach) {
+        if (result.created) {
+            var buf: [4096]u8 = undefined;
+            var w = std.fs.File.stdout().writer(&buf);
+            try w.interface.print("session \"{s}\" created\n", .{daemon.session_name});
+            try w.interface.flush();
+        }
+        return;
+    }
 
     const client_sock = try sessionConnect(daemon.socket_path);
     std.log.info("attached session={s}", .{daemon.session_name});
