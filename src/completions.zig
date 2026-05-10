@@ -39,7 +39,14 @@ const bash_completions =
     \\  fi
     \\
     \\  if [[ "$cur" == -* ]]; then
-    \\    COMPREPLY=($(compgen -W "-g --group" -- "$cur"))
+    \\    local flags="-g --group"
+    \\    for word in "${COMP_WORDS[@]}"; do
+    \\      if [[ "$word" == "attach" || "$word" == "a" ]]; then
+    \\        flags="$flags --detach"
+    \\        break
+    \\      fi
+    \\    done
+    \\    COMPREPLY=($(compgen -W "$flags" -- "$cur"))
     \\    return 0
     \\  fi
     \\
@@ -116,7 +123,14 @@ const zsh_completions =
     \\      ;;
     \\    args)
     \\      case $words[2] in
-    \\        attach|a|detach|d|kill|k|run|r|history|hi)
+    \\        attach|a)
+    \\          if [[ $words[CURRENT] == -* ]]; then
+    \\            _values 'options' '--detach[Create session without attaching]'
+    \\          else
+    \\            _zmx_sessions
+    \\          fi
+    \\          ;;
+    \\        detach|d|kill|k|run|r|history|hi)
     \\          _zmx_sessions
     \\          ;;
     \\        completions|c)
@@ -178,6 +192,8 @@ const fish_completions =
     \\complete -c zmx -n $no_subcmd -a help -d 'Show help message'
     \\
     \\complete -c zmx -n "__fish_seen_subcommand_from attach run detach kill history" -a '(zmx list --short 2>/dev/null)' -d 'Session name'
+    \\
+    \\complete -c zmx -n "__fish_seen_subcommand_from attach a" -l detach -d 'Create session without attaching'
     \\
     \\complete -c zmx -n "__fish_seen_subcommand_from completions" -a 'bash zsh fish' -d 'Shell'
     \\
