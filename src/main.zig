@@ -1130,6 +1130,17 @@ fn ensureSession(daemon: *Daemon) !EnsureSessionResult {
         if (pid == 0) { // child (daemon)
             _ = try posix.setsid();
 
+            // Detach from the parent's stdio so non-TTY callers (scripts,
+            // CI, pipes) don't block waiting for EOF on a fd the daemon
+            // still holds. Without this, `zmx attach --detach` works from
+            // an interactive terminal but hangs the calling process when
+            // run from a pipe.
+            const devnull = try posix.open("/dev/null", .{ .ACCMODE = .RDWR }, 0);
+            try posix.dup2(devnull, posix.STDIN_FILENO);
+            try posix.dup2(devnull, posix.STDOUT_FILENO);
+            try posix.dup2(devnull, posix.STDERR_FILENO);
+            posix.close(devnull);
+
             log_system.deinit();
             const session_log_name = try std.fmt.allocPrint(daemon.alloc, "{s}.log", .{encoded_name});
             defer daemon.alloc.free(session_log_name);
