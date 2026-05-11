@@ -72,9 +72,9 @@ bump-version new_version:
   sed -i.bak 's/zmxVersion = "'"$current"'"/zmxVersion = "{{new_version}}"/' flake.nix && rm flake.nix.bak
   echo "bumped zmxVersion: $current → {{new_version}}"
 
-# Cut a release: must be run on main. Bumps zmxVersion in flake.nix,
+# Cut a release: must be run on master. Bumps zmxVersion in flake.nix,
 # commits the bump with a changelog-style message built from commits
-# since the last v* tag, pushes main, then signs and pushes the
+# since the last v* tag, pushes master, then signs and pushes the
 # v{{version}} tag. The "v" prefix is added for you, so pass the
 # semver without it. Usage: just release 0.4.2
 #
@@ -85,8 +85,8 @@ release version:
   #!/usr/bin/env bash
   set -euo pipefail
   current_branch=$(git rev-parse --abbrev-ref HEAD)
-  if [[ "$current_branch" != "main" ]]; then
-    echo "just release must be run on main (currently on $current_branch)" >&2
+  if [[ "$current_branch" != "master" ]]; then
+    echo "just release must be run on master (currently on $current_branch)" >&2
     exit 1
   fi
   prev=$(git tag --sort=-v:refname -l "v*" | head -1)
@@ -105,7 +105,7 @@ release version:
   if ! git diff --quiet flake.nix; then
     git add flake.nix
     git commit -m "chore: release v{{version}}"
-    git push origin main
-    echo "pushed flake.nix bump to main"
+    git push origin master
+    echo "pushed flake.nix bump to master"
   fi
   just tag "{{version}}" "$msg"
