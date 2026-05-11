@@ -52,12 +52,7 @@ let
     builtins.attrNames (builtins.readDir batsSrc)
   );
 
-  trimWhitespace =
-    s:
-    let
-      m = builtins.match "[[:space:]]*(.*[^[:space:]]|)[[:space:]]*" s;
-    in
-    if m == null then s else builtins.head m;
+  trimWhitespace = s: s;
 
   extractFileTags =
     file:
