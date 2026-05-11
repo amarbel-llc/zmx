@@ -469,16 +469,14 @@ pub fn main() !void {
     } else if (std.mem.eql(u8, command, "attach") or std.mem.eql(u8, command, "a")) {
         var detach_flag = false;
         var session_name: ?[]const u8 = null;
-        var command_started = false;
         var command_args: std.ArrayList([]const u8) = .empty;
         defer command_args.deinit(alloc);
         while (args.next()) |arg| {
-            if (!command_started and std.mem.eql(u8, arg, "--detach")) {
+            if (std.mem.eql(u8, arg, "--detach")) {
                 detach_flag = true;
-            } else if (!command_started and session_name == null) {
+            } else if (session_name == null) {
                 session_name = arg;
             } else {
-                command_started = true;
                 try command_args.append(alloc, arg);
             }
         }
@@ -1176,12 +1174,14 @@ fn attach(daemon: *Daemon, detach: bool) !void {
     if (result.is_daemon) return;
 
     if (detach) {
+        var buf: [4096]u8 = undefined;
+        var w = std.fs.File.stdout().writer(&buf);
         if (result.created) {
-            var buf: [4096]u8 = undefined;
-            var w = std.fs.File.stdout().writer(&buf);
             try w.interface.print("session \"{s}\" created\n", .{daemon.session_name});
-            try w.interface.flush();
+        } else {
+            try w.interface.print("session \"{s}\" already exists\n", .{daemon.session_name});
         }
+        try w.interface.flush();
         return;
     }
 

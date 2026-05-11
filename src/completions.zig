@@ -38,18 +38,6 @@ const bash_completions =
     \\    return 0
     \\  fi
     \\
-    \\  if [[ "$cur" == -* ]]; then
-    \\    local flags="-g --group"
-    \\    for word in "${COMP_WORDS[@]}"; do
-    \\      if [[ "$word" == "attach" || "$word" == "a" ]]; then
-    \\        flags="$flags --detach"
-    \\        break
-    \\      fi
-    \\    done
-    \\    COMPREPLY=($(compgen -W "$flags" -- "$cur"))
-    \\    return 0
-    \\  fi
-    \\
     \\  # Find the subcommand (skip -g <group>)
     \\  local subcmd=""
     \\  local i=1
@@ -65,6 +53,15 @@ const bash_completions =
     \\    fi
     \\    ((i++))
     \\  done
+    \\
+    \\  if [[ "$cur" == -* ]]; then
+    \\    local flags="-g --group"
+    \\    if [[ "$subcmd" == "attach" || "$subcmd" == "a" ]]; then
+    \\      flags="$flags --detach"
+    \\    fi
+    \\    COMPREPLY=($(compgen -W "$flags" -- "$cur"))
+    \\    return 0
+    \\  fi
     \\
     \\  if [[ -z "$subcmd" ]]; then
     \\    COMPREPLY=($(compgen -W "$commands" -- "$cur"))
