@@ -573,7 +573,8 @@ fn help() !void {
         \\Commands:
         \\  [a]ttach <name> [command...] [--detach]
         \\                                Attach to session, creating session if needed
-        \\                                (--detach: create session without attaching)
+        \\                                (--detach: ensure session exists, print status, and exit
+        \\                                without attaching; flag is accepted in any position)
         \\  [f]ork [<name>]               Fork current session (same cmd + cwd) into a new session
         \\  [r]un <name> [command...]     Send command without attaching, creating session if needed
         \\  [d]etach [<name>]              Detach all clients from current or named session
