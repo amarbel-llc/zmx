@@ -168,6 +168,31 @@ const zsh_completions =
 ;
 
 const fish_completions =
+    \\function __zmx_subcommand
+    \\    # Print the active subcommand (first non-switch arg after `zmx`,
+    \\    # skipping the global `-g <group>` / `--group <group>` pair).
+    \\    # Returns 1 if no subcommand has been typed yet.
+    \\    set -l tokens (commandline -opc)
+    \\    set -l i 2
+    \\    set -l n (count $tokens)
+    \\    while test $i -le $n
+    \\        switch $tokens[$i]
+    \\            case -g --group
+    \\                set i (math $i + 2)
+    \\            case '-*'
+    \\                set i (math $i + 1)
+    \\            case '*'
+    \\                echo $tokens[$i]
+    \\                return 0
+    \\        end
+    \\    end
+    \\    return 1
+    \\end
+    \\
+    \\function __zmx_subcommand_is
+    \\    contains -- (__zmx_subcommand) $argv
+    \\end
+    \\
     \\complete -c zmx -f
     \\
     \\set -l subcommands attach run detach detach-all fork groups list completions kill history version help
@@ -190,7 +215,7 @@ const fish_completions =
     \\
     \\complete -c zmx -n "__fish_seen_subcommand_from attach run detach kill history" -a '(zmx list --short 2>/dev/null)' -d 'Session name'
     \\
-    \\complete -c zmx -n "__fish_seen_subcommand_from attach a" -l detach -d 'Create session without attaching'
+    \\complete -c zmx -n "__zmx_subcommand_is attach a" -l detach -d 'Create session without attaching'
     \\
     \\complete -c zmx -n "__fish_seen_subcommand_from completions" -a 'bash zsh fish' -d 'Shell'
     \\
