@@ -5,6 +5,12 @@
     utils.url = "https://flakehub.com/f/numtide/flake-utils/0.1.102";
     nixpkgs-master.url = "github:NixOS/nixpkgs/e2dde111aea2c0699531dc616112a96cd55ab8b5";
     nixpkgs.url = "github:NixOS/nixpkgs/3e20095fe3c6cbb1ddcef89b26969a69a1570776";
+    # amarbel-llc fork provides pkgs.testers.batsLane via its overlay.
+    # Used only for the bats integration lane builder; the main zmx
+    # build stays pinned to NixOS/nixpkgs above.
+    nixpkgs-bats.url = "github:amarbel-llc/nixpkgs";
+    bats.url = "github:amarbel-llc/bats";
+    bats.inputs.nixpkgs.follows = "nixpkgs-bats";
   };
 
   outputs =
@@ -12,6 +18,8 @@
       self,
       nixpkgs,
       nixpkgs-master,
+      nixpkgs-bats,
+      bats,
       utils,
       ...
     }:
@@ -43,6 +51,7 @@
         system:
         let
           pkgs = import nixpkgs { inherit system; };
+          pkgs-bats = import nixpkgs-bats { inherit system; };
           callZmx =
             args:
             pkgs.callPackage ./package.nix (
@@ -52,11 +61,31 @@
               }
               // args
             );
+          zmx-libvterm = callZmx { useLibvterm = true; };
+
+          batsLib = import ./bats.nix {
+            pkgs = pkgs-bats;
+            zmxBin = zmx-libvterm;
+            bats-libs = bats.packages.${system}.bats-libs;
+            batsSrc = pkgs.lib.cleanSourceWith {
+              src = ./zz-tests_bats;
+              filter =
+                path: type:
+                type == "directory"
+                || pkgs.lib.hasSuffix ".bats" path
+                || baseNameOf path == "common.bash"
+                || baseNameOf path == "setup_suite.bash";
+            };
+          };
         in
         {
-          packages = {
-            zmx-libvterm = callZmx { useLibvterm = true; };
-            default = callZmx { useLibvterm = true; };
+          packages = batsLib.batsLaneOutputs // {
+            inherit zmx-libvterm;
+            default = zmx-libvterm;
+          };
+
+          checks = {
+            bats-default = batsLib.batsLaneOutputs.bats-default;
           };
 
           devShells.default = pkgs.mkShell {

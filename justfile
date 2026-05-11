@@ -10,6 +10,21 @@ check:
 test:
   nix develop -c zig build test -Dbackend=libvterm
 
+# bats integration suite via the nix sandbox. Authoritative; CI runs this.
+test-bats:
+  nix build .#bats-default --no-link --print-build-logs
+
+# bats integration suite filtered by file_tag (e.g. just test-bats-tags help).
+test-bats-tags *tags:
+  nix build .#bats-{{tags}} --no-link --print-build-logs
+
+# Fast iteration: runs against ./result/bin/zmx from a prior `just build`.
+# Requires `bats` plus its libraries on PATH.
+test-bats-local *targets="*.bats":
+  ZMX_BIN=$(realpath ./result/bin/zmx) \
+    BATS_TEST_TIMEOUT=10 \
+    bats --jobs $(nproc) zz-tests_bats/{{targets}}
+
 ghostty_commit := "a692cb9e5fabfd337827cc99cd62e3ea90ab9c92"
 
 # Vendor ghostty dependency into deps/ghostty
