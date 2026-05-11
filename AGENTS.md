@@ -1,47 +1,97 @@
-# zmx
+# CLAUDE.md
 
-The goal of this project is to create a way to attach and detach terminal sessions without killing the underlying linux process.
+This file provides guidance to Claude Code (claude.ai/code) when working with
+code in this repository.
 
-When researching `zmx`, also read the @README.md in the root of this project directory to learn more about the features, documentation, prior art, etc.
+## Overview
 
-## tech stack
+zmx is a terminal session persistence tool (alternative to tmux) written in Zig.
+It allows attaching and detaching from terminal sessions without killing
+underlying processes, delegating window management to the OS window manager.
+Uses a daemon-per-session architecture with Unix socket IPC.
 
-- `zig` v0.15.1
-- `libghostty-vt` for terminal escape codes and terminal state management
+## Build & Test Commands
 
-## commands
-
-- **Build:** `zig build`
-- **Build Check (Zig)**: `zig build check`
-- **Test (Zig):** `zig build test`
-- **Test filter (Zig)**: `zig build test -Dtest-filter=<test name>`
-- **Formatting (Zig)**: `zig fmt .`
-
-## find any library API definitions
-
-Before trying anything else, run the `zigdoc` command to find an API with documentation:
-
+``` sh
+just                # build + test (zig + bats), the CI-equivalent target
+just build          # aggregate: build-nix
+just test           # aggregate: test-zig test-bats
+just test-zig       # Zig unit tests via Nix
+just test-bats      # bats integration suite in the nix sandbox
+just validate-zig   # Zig compilation check (for IDE integration)
 ```
-zigdoc {symbol}
-# examples
+
+Direct zig commands (via nix devshell):
+
+``` sh
+nix develop -c zig build check                    # Compilation check
+nix develop -c zig build test                      # Run tests
+nix develop -c zig build test -Dtest-filter=<name> # Run specific test
+zig fmt .                                          # Format code
+```
+
+Two build variants: - `zmx` (default): Uses ghostty-vt backend - `zmx-libvterm`:
+Uses libvterm-neovim backend, wrapped with library paths
+
+## Architecture
+
+### Daemon-Client Model
+
+Each session runs a dedicated daemon process that manages a PTY and connected
+clients. Communication uses a custom binary protocol over Unix sockets
+(`src/ipc.zig`). Message types: Input, Output, Resize, Detach, DetachAll, Kill,
+Info, Init, History, Run, Ack.
+
+### Backend System
+
+Compile-time polymorphic terminal backends via `src/terminal.zig`: - **ghostty**
+(`src/backends/ghostty.zig`): Default. Full feature set including HTML
+serialization, palette management, keyboard state restoration. - **libvterm**
+(`src/backends/libvterm.zig`): C FFI to libvterm-neovim. Plain text and VT
+format only.
+
+Selected at build time with `-Dbackend=ghostty|libvterm`.
+
+### Key Source Files
+
+- `src/main.zig`: Entry point, CLI parsing, daemon/client event loops, PTY
+  management (\~2000 lines)
+- `src/terminal.zig`: Generic `Terminal(Impl)` and `VtStream(Impl)` interfaces
+- `src/ipc.zig`: Binary message protocol (5-byte header + payload)
+- `src/log.zig`: File-based logging with 5MB rotation
+- `src/completions.zig`: Embedded shell completion scripts (bash/zsh/fish)
+
+### Session Organization
+
+Sessions are organized into groups (`-g`/`--group` flag, `ZMX_GROUP` env var).
+Socket paths use URL percent-encoding for session names. Socket directory
+resolution: `ZMX_DIR` \> `XDG_RUNTIME_DIR/zmx` \> `TMPDIR/zmx-{uid}` \>
+`/tmp/zmx-{uid}`.
+
+### PTY Management
+
+Platform-specific: `forkpty()` on macOS/FreeBSD, `openpty()` on Linux. Uses
+`poll()` for non-blocking multiplexed I/O between PTY and clients. Uses
+`std.heap.c_allocator` (not DebugAllocator) for fork compatibility.
+
+## Finding APIs
+
+Use `zigdoc` to look up library APIs before grepping:
+
+``` sh
 zigdoc ghostty-vt
 zigdoc std.ArrayList
-zigdoc std.mem.Allocator
-zigdoc std.http.Server
 ```
 
-Only if that doesn't work should you grep the project dir.
-
-## find zig std library source code
-
-To inspect the source code for zig's standard library, look inside the `zig_std_src` folder.
-
-## find ghostty library source code
-
-To inspect the source code for zig's standard library, look inside the `ghostty_src` folder.
+Source inspection directories: `zig_std_src/` (stdlib), `ghostty_src/`
+(ghostty-vt).
 
 ## Issue Tracking
 
-We use bd (beads, https://github.com/steveyegge/beads) for issue tracking instead of Markdown TODOs or external tools.
+Uses bd (beads) for issue tracking. Run `bd quickstart` to learn usage.
 
-Run `bd quickstart` to learn how to use it.
+## Nix Flake
+
+Follows the stable-first nixpkgs convention: `nixpkgs` (stable) and
+`nixpkgs-master` (unstable). Uses nixpkgs `zig_0_15.hook` and
+`zig_0_15.fetchDeps` for Zig build integration. Build logic is in `package.nix`.
