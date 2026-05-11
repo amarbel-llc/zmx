@@ -1,16 +1,19 @@
 
 default: build test
 
-build:
+build: build-nix
+
+build-nix:
   nix build .#default
 
-check:
+validate-zig:
   nix develop -c zig build check -Dbackend=libvterm
 
-test:
+test: test-zig test-bats
+
+test-zig:
   nix develop -c zig build test -Dbackend=libvterm
 
-# bats integration suite via the nix sandbox. Authoritative; CI runs this.
 test-bats:
   nix build .#bats-default --no-link --print-build-logs
 

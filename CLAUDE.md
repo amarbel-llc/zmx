@@ -13,9 +13,12 @@ Uses a daemon-per-session architecture with Unix socket IPC.
 ## Build & Test Commands
 
 ``` sh
-just build          # Build zmx-libvterm via Nix (default target)
-just test           # Run unit tests via Nix
-just check          # Zig compilation check (for IDE integration)
+just                # build + test (zig + bats), the CI-equivalent target
+just build          # aggregate: build-nix
+just test           # aggregate: test-zig test-bats
+just test-zig       # Zig unit tests via Nix
+just test-bats      # bats integration suite in the nix sandbox
+just validate-zig   # Zig compilation check (for IDE integration)
 ```
 
 Direct zig commands (via nix devshell):
