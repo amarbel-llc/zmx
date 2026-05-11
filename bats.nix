@@ -37,9 +37,15 @@ let
         BATS_TEST_TIMEOUT = batsTestTimeout;
       };
       # bats-island's setup_test_home shells out to git to populate
-      # GIT_CONFIG_GLOBAL with a deterministic identity. The nix sandbox
-      # has no git by default, so make it available.
-      nativeBuildInputs = [ pkgs.git ];
+      # GIT_CONFIG_GLOBAL with a deterministic identity. fish, bash,
+      # and zsh power the completion-syntax smoke tests in
+      # zz-tests_bats/completions.bats.
+      nativeBuildInputs = [
+        pkgs.git
+        pkgs.fish
+        pkgs.bash
+        pkgs.zsh
+      ];
     };
 
   batsFiles = lib.filter (f: lib.hasSuffix ".bats" f) (
