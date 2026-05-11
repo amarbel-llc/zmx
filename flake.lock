@@ -2,19 +2,17 @@
   "nodes": {
     "bats": {
       "inputs": {
-        "nixpkgs": [
-          "nixpkgs-bats"
-        ],
+        "nixpkgs": "nixpkgs",
         "nixpkgs-master": "nixpkgs-master",
         "tap": "tap",
         "utils": "utils_2"
       },
       "locked": {
-        "lastModified": 1777821181,
-        "narHash": "sha256-ITg34IBiPnzBuYGEPy/CcZy77EgCL10SVrY+HZymcKA=",
+        "lastModified": 1778502279,
+        "narHash": "sha256-PQbfPWxVrE4VTOjWfhTQiF2dedmOa/RNjetrlge4Zs8=",
         "owner": "amarbel-llc",
         "repo": "bats",
-        "rev": "7df322178c70d5430eb4859d66f50494fca579ca",
+        "rev": "34a416100a606ecc3d6e008ec12004a9cac34859",
         "type": "github"
       },
       "original": {
@@ -80,31 +78,15 @@
       }
     },
     "nixpkgs": {
-      "locked": {
-        "lastModified": 1773375660,
-        "narHash": "sha256-SEzUWw2Rf5Ki3bcM26nSKgbeoqi2uYy8IHVBqOKjX3w=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "3e20095fe3c6cbb1ddcef89b26969a69a1570776",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "3e20095fe3c6cbb1ddcef89b26969a69a1570776",
-        "type": "github"
-      }
-    },
-    "nixpkgs-bats": {
       "inputs": {
         "nixpkgs": "nixpkgs_2"
       },
       "locked": {
-        "lastModified": 1778498798,
-        "narHash": "sha256-00kdSfx7hTtSS0S+1QDA7/wsSGIR74mmbwtcP8Z++b0=",
+        "lastModified": 1777765487,
+        "narHash": "sha256-neqgsIllDdX1GdG4Yx0Ni6rbYQGgTzAzQbCW4mg5LaI=",
         "owner": "amarbel-llc",
         "repo": "nixpkgs",
-        "rev": "b7ed949f31443a93891d0a935317d344ab01adcc",
+        "rev": "9784f3f865acf131b1bc082fdb966ae7a828c547",
         "type": "github"
       },
       "original": {
@@ -177,11 +159,26 @@
         "type": "github"
       }
     },
+    "nixpkgs_3": {
+      "locked": {
+        "lastModified": 1773375660,
+        "narHash": "sha256-SEzUWw2Rf5Ki3bcM26nSKgbeoqi2uYy8IHVBqOKjX3w=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "3e20095fe3c6cbb1ddcef89b26969a69a1570776",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "3e20095fe3c6cbb1ddcef89b26969a69a1570776",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "bats": "bats",
-        "nixpkgs": "nixpkgs",
-        "nixpkgs-bats": "nixpkgs-bats",
+        "nixpkgs": "nixpkgs_3",
         "nixpkgs-master": "nixpkgs-master_3",
         "utils": "utils_3"
       }

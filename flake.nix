@@ -5,12 +5,11 @@
     utils.url = "https://flakehub.com/f/numtide/flake-utils/0.1.102";
     nixpkgs-master.url = "github:NixOS/nixpkgs/e2dde111aea2c0699531dc616112a96cd55ab8b5";
     nixpkgs.url = "github:NixOS/nixpkgs/3e20095fe3c6cbb1ddcef89b26969a69a1570776";
-    # amarbel-llc fork provides pkgs.testers.batsLane via its overlay.
-    # Used only for the bats integration lane builder; the main zmx
-    # build stays pinned to NixOS/nixpkgs above.
-    nixpkgs-bats.url = "github:amarbel-llc/nixpkgs";
+    # amarbel-llc/bats exposes `batsLane` (lifted from the
+    # amarbel-llc/nixpkgs overlay) so consumers don't need to pull
+    # the fork's nixpkgs just for the lane builder. We follow our
+    # main nixpkgs into the bats flake's nixpkgs slot.
     bats.url = "github:amarbel-llc/bats";
-    bats.inputs.nixpkgs.follows = "nixpkgs-bats";
   };
 
   outputs =
@@ -18,7 +17,6 @@
       self,
       nixpkgs,
       nixpkgs-master,
-      nixpkgs-bats,
       bats,
       utils,
       ...
@@ -51,7 +49,6 @@
         system:
         let
           pkgs = import nixpkgs { inherit system; };
-          pkgs-bats = import nixpkgs-bats { inherit system; };
           callZmx =
             args:
             pkgs.callPackage ./package.nix (
@@ -64,9 +61,10 @@
           zmx-libvterm = callZmx { useLibvterm = true; };
 
           batsLib = import ./bats.nix {
-            pkgs = pkgs-bats;
-            zmxBin = zmx-libvterm;
+            inherit pkgs;
+            batsLane = bats.lib.${system}.batsLane;
             bats-libs = bats.packages.${system}.bats-libs;
+            zmxBin = zmx-libvterm;
             batsSrc = pkgs.lib.cleanSourceWith {
               src = ./zz-tests_bats;
               filter =

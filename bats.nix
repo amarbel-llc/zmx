@@ -1,17 +1,16 @@
 # bats integration test lanes for zmx.
 #
-# Wraps `pkgs.testers.batsLane` (provided by the amarbel-llc/nixpkgs
-# overlay) with project-specific defaults: `bats-libs` from
-# amarbel-llc/bats on `BATS_LIB_PATH`, the zmx binary exported via the
-# `binaries` map, and a `BATS_TEST_TIMEOUT` mirroring zz-tests_bats.
+# Wraps the `batsLane` builder from amarbel-llc/bats with
+# project-specific defaults: `bats-libs` on `BATS_LIB_PATH`, the zmx
+# binary exported via the `binaries` map, and a `BATS_TEST_TIMEOUT`
+# mirroring zz-tests_bats.
 #
 # Auto-discovers `# bats file_tags=foo,bar` directives at flake-eval
 # time and produces one `bats-${tag}` derivation per unique tag plus
 # `bats-default` (no filter).
-#
-# Modeled after ~/eng/repos/tap/bats.nix and ~/eng/repos/clown/bats.nix.
 {
   pkgs,
+  batsLane,
   bats-libs,
   zmxBin, # the zmx binary derivation (wrapped with libvterm LD_LIBRARY_PATH)
   batsSrc,
@@ -25,7 +24,7 @@ let
       filter ? "",
       base ? zmxBin,
     }:
-    pkgs.testers.batsLane {
+    batsLane {
       inherit base filter batsSrc;
       binaries = {
         ZMX_BIN = {
