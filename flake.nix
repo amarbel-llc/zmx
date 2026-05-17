@@ -3,7 +3,7 @@
 
   inputs = {
     utils.url = "https://flakehub.com/f/numtide/flake-utils/0.1.102";
-    nixpkgs-master.url = "github:NixOS/nixpkgs/bb7e5d8ac99f4b9d2527f2355e614d6bb0f3288d";
+    nixpkgs-master.url = "github:NixOS/nixpkgs/d233902339c02a9c334e7e593de68855ad26c4cb";
     nixpkgs.url = "github:NixOS/nixpkgs/3e20095fe3c6cbb1ddcef89b26969a69a1570776";
     # amarbel-llc/bats exposes `batsLane` (lifted from the
     # amarbel-llc/nixpkgs overlay) so consumers don't need to pull
