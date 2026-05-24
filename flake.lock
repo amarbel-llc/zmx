@@ -7,11 +7,11 @@
         "utils": "utils"
       },
       "locked": {
-        "lastModified": 1779625484,
-        "narHash": "sha256-YMbEaU8fnOqZxEZR17N2zRxqHi+USqpfqXoogbWdzhY=",
+        "lastModified": 1779654841,
+        "narHash": "sha256-XF+CbhX1h11XOm0hAOuc2Ky2iGr2EUtFwoouUa82bKU=",
         "owner": "amarbel-llc",
         "repo": "bats",
-        "rev": "1bc985d471a412cbee17709c7416bfc85d115f79",
+        "rev": "97404c16b8554f8f766af606c80d76e316a925b4",
         "type": "github"
       },
       "original": {
@@ -25,11 +25,11 @@
         "nixpkgs-master": "nixpkgs-master"
       },
       "locked": {
-        "lastModified": 1779624474,
-        "narHash": "sha256-I3eKOp12VOKsMAVa7r4w37EoAjLm1cGDHAORw2pjSGw=",
+        "lastModified": 1779649008,
+        "narHash": "sha256-7BA4DFkvvVWlyGZwr75bJq0C4B6ERd4j4D7J1S1I4cc=",
         "owner": "amarbel-llc",
         "repo": "nixpkgs",
-        "rev": "4c4a920ba0fa63b988e26bdb458a5c38c2caf25a",
+        "rev": "167942ee2f37a8ba0a8c73ca45c2a8cac039eb08",
         "type": "github"
       },
       "original": {
