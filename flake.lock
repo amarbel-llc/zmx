@@ -2,17 +2,17 @@
   "nodes": {
     "bats": {
       "inputs": {
-        "nixpkgs": "nixpkgs",
+        "igloo": "igloo",
         "nixpkgs-master": "nixpkgs-master_2",
         "treefmt-nix": "treefmt-nix_2",
         "utils": "utils"
       },
       "locked": {
-        "lastModified": 1780057695,
-        "narHash": "sha256-GPc/9XgEtR2UdIFyajHgfIsyV+mTVdCauFLgo6qzWXY=",
+        "lastModified": 1780148155,
+        "narHash": "sha256-CPMFG4CIP5FCK8uADQqCP08yVb2FwiYD1qzPAr4tECc=",
         "owner": "amarbel-llc",
         "repo": "bats",
-        "rev": "1ba0ab1590544685fba211dff9e3e7ccf60c0fc0",
+        "rev": "0e259f58f1f992ee0eb75730e612efd1ce66fb44",
         "type": "github"
       },
       "original": {
@@ -25,22 +25,22 @@
       "inputs": {
         "flake-parts": [
           "bats",
-          "nixpkgs",
+          "igloo",
           "flake-parts"
         ],
         "nixpkgs": [
           "bats",
-          "nixpkgs",
+          "igloo",
           "nixpkgs-master"
         ],
         "systems": [
           "bats",
-          "nixpkgs",
+          "igloo",
           "systems"
         ],
         "treefmt-nix": [
           "bats",
-          "nixpkgs",
+          "igloo",
           "treefmt-nix"
         ]
       },
@@ -62,7 +62,7 @@
       "inputs": {
         "nixpkgs-lib": [
           "bats",
-          "nixpkgs",
+          "igloo",
           "nixpkgs-master"
         ]
       },
@@ -80,7 +80,7 @@
         "type": "github"
       }
     },
-    "nixpkgs": {
+    "igloo": {
       "inputs": {
         "bun2nix": "bun2nix",
         "flake-parts": "flake-parts",
@@ -99,6 +99,22 @@
       "original": {
         "owner": "amarbel-llc",
         "repo": "igloo",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1773375660,
+        "narHash": "sha256-SEzUWw2Rf5Ki3bcM26nSKgbeoqi2uYy8IHVBqOKjX3w=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "3e20095fe3c6cbb1ddcef89b26969a69a1570776",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "3e20095fe3c6cbb1ddcef89b26969a69a1570776",
         "type": "github"
       }
     },
@@ -150,26 +166,10 @@
         "type": "github"
       }
     },
-    "nixpkgs_2": {
-      "locked": {
-        "lastModified": 1773375660,
-        "narHash": "sha256-SEzUWw2Rf5Ki3bcM26nSKgbeoqi2uYy8IHVBqOKjX3w=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "3e20095fe3c6cbb1ddcef89b26969a69a1570776",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "3e20095fe3c6cbb1ddcef89b26969a69a1570776",
-        "type": "github"
-      }
-    },
     "root": {
       "inputs": {
         "bats": "bats",
-        "nixpkgs": "nixpkgs_2",
+        "nixpkgs": "nixpkgs",
         "nixpkgs-master": "nixpkgs-master_3",
         "utils": "utils_2"
       }
@@ -223,7 +223,7 @@
       "inputs": {
         "nixpkgs": [
           "bats",
-          "nixpkgs",
+          "igloo",
           "nixpkgs-master"
         ]
       },
@@ -245,7 +245,7 @@
       "inputs": {
         "nixpkgs": [
           "bats",
-          "nixpkgs"
+          "igloo"
         ]
       },
       "locked": {
