@@ -5,6 +5,13 @@
     utils.url = "https://flakehub.com/f/numtide/flake-utils/0.1.102";
     nixpkgs-master.url = "github:NixOS/nixpkgs/d233902339c02a9c334e7e593de68855ad26c4cb";
     nixpkgs.url = "github:NixOS/nixpkgs/3e20095fe3c6cbb1ddcef89b26969a69a1570776";
+    # Dedicated, never-followed nixpkgs for the Zig toolchain. Pinning zig
+    # here (rather than taking it from the main `nixpkgs` input) means a
+    # downstream consumer that does `inputs.zmx.inputs.nixpkgs.follows`
+    # (e.g. amarbel-llc/eng) cannot shift the compiler and invalidate
+    # package.nix's fetchDeps depsHash. Keep this rev in lockstep with the
+    # rev the committed depsHash was computed against.
+    nixpkgs-zig.url = "github:NixOS/nixpkgs/3e20095fe3c6cbb1ddcef89b26969a69a1570776";
     # amarbel-llc/bats exposes `batsLane` (lifted from the
     # amarbel-llc/nixpkgs overlay) so consumers don't need to pull
     # the fork's nixpkgs just for the lane builder. We follow our
@@ -17,6 +24,7 @@
       self,
       nixpkgs,
       nixpkgs-master,
+      nixpkgs-zig,
       bats,
       utils,
       ...
@@ -49,12 +57,16 @@
         system:
         let
           pkgs = import nixpkgs { inherit system; };
+          # Zig comes from the pinned nixpkgs-zig so the package build's
+          # depsHash stays valid even when a consumer follows our nixpkgs.
+          pkgsZig = import nixpkgs-zig { inherit system; };
           callZmx =
             args:
             pkgs.callPackage ./package.nix (
               {
                 version = zmxVersion;
                 commit = zmxCommit;
+                zig_0_15 = pkgsZig.zig_0_15;
               }
               // args
             );
