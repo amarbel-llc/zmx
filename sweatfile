@@ -1,0 +1,18 @@
+# vim: ft=toml
+#
+# spinclass(1) repo-level sweatfile.
+# See spinclass-sweatfile(5) for the full schema.
+
+[hooks]
+# `just` runs the default recipe (justfile:2 — `default: build test`):
+# nix build (.#default) + zig unit tests + bats integration suite. That
+# is the CI-equivalent target for this repo, so it doubles as the
+# pre-merge gate.
+#
+# Overrides the `just build-nix build-home-dry` inherited from
+# ~/eng/sweatfile: zmx has no home-manager activation package and its
+# justfile defines no `build-home-dry` recipe, so the inherited hook
+# aborts before building anything. The [[pre-merge-skills]] declared in
+# ~/eng/sweatfile (simplify, review, eng:loose-ends) still apply via
+# inheritance.
+pre-merge = "just"
