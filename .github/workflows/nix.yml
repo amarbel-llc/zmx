@@ -16,10 +16,13 @@ jobs:
 
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-22.04
             system: x86_64-linux
+          - os: macos-15
+            system: aarch64-darwin
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
