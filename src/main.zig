@@ -6,6 +6,7 @@ const terminal = @import("terminal.zig");
 const ipc = @import("ipc.zig");
 const log = @import("log.zig");
 const completions = @import("completions.zig");
+const title = @import("title.zig");
 
 pub const version = build_options.version;
 pub const commit = build_options.commit;
@@ -171,6 +172,9 @@ const Daemon = struct {
     cwd: []const u8 = "",
     has_pty_output: bool = false,
     has_had_client: bool = false,
+    // Tracks the latest OSC 0/2 window title from PTY output so it can be
+    // re-emitted on re-attach (issue #6). Default-constructed; no allocation.
+    title_tracker: title.TitleTracker = .{},
 
     pub fn deinit(self: *Daemon) void {
         self.clients.deinit(self.alloc);
@@ -245,6 +249,20 @@ const Daemon = struct {
                 defer self.alloc.free(output);
                 ipc.appendMessage(self.alloc, &client.write_buf, .Output, output) catch |err| {
                     std.log.warn("failed to buffer terminal state for client err={s}", .{@errorName(err)});
+                };
+                client.has_pending_output = true;
+            }
+
+            // Restore the window title (issue #6). The shell emitted its OSC
+            // 0/2 sequence in the past; the terminal backends don't serialize
+            // it, so re-emit the last captured title for this re-attaching
+            // client so the real terminal's title is restored.
+            if (self.title_tracker.current()) |t| {
+                var title_buf: [title.TitleTracker.max_len + 8]u8 = undefined;
+                const seq = std.fmt.bufPrint(&title_buf, "\x1b]{d};{s}\x07", .{ t.code, t.text }) catch unreachable;
+                std.log.debug("restore window title len={d}", .{t.text.len});
+                ipc.appendMessage(self.alloc, &client.write_buf, .Output, seq) catch |err| {
+                    std.log.warn("failed to buffer window title for client err={s}", .{@errorName(err)});
                 };
                 client.has_pending_output = true;
             }
@@ -1589,6 +1607,9 @@ fn daemonLoop(daemon: *Daemon, server_sock_fd: i32, pty_fd: i32) !void {
                 } else {
                     // Feed PTY output to terminal emulator for state tracking
                     try vt_stream.nextSlice(buf[0..n]);
+                    // Track the window title separately: the terminal backends
+                    // don't capture OSC 0/2, so we scan the raw stream (issue #6).
+                    daemon.title_tracker.feed(buf[0..n]);
                     daemon.has_pty_output = true;
 
                     // Broadcast data to all clients
@@ -2231,4 +2252,8 @@ test "encodeSessionName and decodeSessionName are inverse operations" {
         defer alloc.free(decoded);
         try std.testing.expectEqualStrings(original, decoded);
     }
+}
+
+test {
+    _ = @import("title.zig");
 }
