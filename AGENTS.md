@@ -30,8 +30,16 @@ nix develop -c zig build test -Dtest-filter=<name> # Run specific test
 zig fmt .                                          # Format code
 ```
 
-Two build variants: - `zmx` (default): Uses ghostty-vt backend - `zmx-libvterm`:
-Uses libvterm-neovim backend, wrapped with library paths
+Two build variants: - `zmx-libvterm`: libvterm-neovim backend, wrapped with
+library paths. This is the Nix `.#default` package — it is what `just build`
+installs and what the bats suite, `just test-zig`, and `just validate-zig`
+exercise. - `zmx`: ghostty-vt backend.
+
+Note on "default": the Nix `.#default` package is `zmx-libvterm`, but
+`build.zig`'s `-Dbackend` flag defaults to `ghostty`. So a bare
+`nix develop -c zig build` in the devshell compiles the ghostty backend, while
+every `just` recipe explicitly targets libvterm. The shipped/tested binary is
+libvterm.
 
 ## Architecture
 
@@ -45,12 +53,15 @@ Info, Init, History, Run, Ack.
 ### Backend System
 
 Compile-time polymorphic terminal backends via `src/terminal.zig`: - **ghostty**
-(`src/backends/ghostty.zig`): Default. Full feature set including HTML
-serialization, palette management, keyboard state restoration. - **libvterm**
-(`src/backends/libvterm.zig`): C FFI to libvterm-neovim. Plain text and VT
-format only.
+(`src/backends/ghostty.zig`): the `-Dbackend` compile default. Full feature set
+including HTML serialization, palette management, keyboard state restoration. -
+**libvterm** (`src/backends/libvterm.zig`): C FFI to libvterm-neovim. Plain text
+and VT format only. This is the backend shipped by the Nix `.#default` package
+and exercised by the bats suite and `just test-zig`.
 
-Selected at build time with `-Dbackend=ghostty|libvterm`.
+Selected at build time with `-Dbackend=ghostty|libvterm` (flag default
+`ghostty`); the Nix packages pin the backend per variant (`.#default` =
+`zmx-libvterm`).
 
 ### Key Source Files
 
