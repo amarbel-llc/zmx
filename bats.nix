@@ -39,12 +39,17 @@ let
       # bats-island's setup_test_home shells out to git to populate
       # GIT_CONFIG_GLOBAL with a deterministic identity. fish, bash,
       # and zsh power the completion-syntax smoke tests in
-      # zz-tests_bats/completions.bats.
+      # zz-tests_bats/completions.bats. socat drives raw-socket fake
+      # clients in zz-tests_bats/resize.bats; coreutils (stty) and
+      # findutils (find) support its size probe / socket discovery.
       nativeBuildInputs = [
         pkgs.git
         pkgs.fish
         pkgs.bash
         pkgs.zsh
+        pkgs.socat
+        pkgs.coreutils
+        pkgs.findutils
       ];
     };
 
