@@ -32,7 +32,7 @@
     let
       # Burnt into the binary via -Dversion / -Dcommit. Single source of
       # truth for the release version; bump this line and tag.
-      zmxVersion = "0.16.1";
+      zmxVersion = "0.16.2";
       # shortRev for clean builds, dirty-prefixed dirtyShortRev for dirty
       # working trees so devshell builds don't masquerade as clean
       # releases. "unknown" as a last-resort fallback.
