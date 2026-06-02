@@ -60,3 +60,9 @@ zmx_input_msg() {
   printf '%b' "\\x00$(printf '\\x%02x\\x%02x\\x%02x\\x%02x' "$(( len & 255 ))" "$(( (len >> 8) & 255 ))" "$(( (len >> 16) & 255 ))" "$(( (len >> 24) & 255 ))")\\x00\\x00\\x00"
   printf '%s' "$data"
 }
+
+# Print (to stdout) a no-payload control message with tag $1 — just the 8-byte
+# Header { tag, len=0 }. E.g. Detach (0x03), DetachAll (0x04), Kill (0x05).
+zmx_ctrl_msg() {
+  printf '%b' "$(printf '\\x%02x' "$1")\\x00\\x00\\x00\\x00\\x00\\x00\\x00"
+}
