@@ -66,6 +66,11 @@ const Client = struct {
     has_pending_output: bool = false,
     read_buf: ipc.SocketBuffer,
     write_buf: std.ArrayList(u8),
+    // Last terminal size this client reported (via Init/Resize). A zero
+    // dimension means "not yet reported" and is ignored when computing the
+    // shared PTY size. See minClientSize / Daemon.applyClientSize.
+    cols: u16 = 0,
+    rows: u16 = 0,
 
     pub fn deinit(self: *Client) void {
         posix.close(self.socket_fd);
@@ -73,6 +78,36 @@ const Client = struct {
         self.write_buf.deinit(self.alloc);
     }
 };
+
+/// Window size shared by the PTY and all attached clients.
+const ClientSize = ipc.Resize;
+
+/// Fold one client's reported size into the running elementwise minimum.
+/// Sizes with a zero dimension are "not yet reported" and ignored, so a
+/// freshly-accepted client that hasn't sent its size doesn't collapse the
+/// PTY to 0x0.
+fn foldMinSize(acc: ?ClientSize, s: ClientSize) ?ClientSize {
+    if (s.cols == 0 or s.rows == 0) return acc;
+    const a = acc orelse return s;
+    return .{ .rows = @min(a.rows, s.rows), .cols = @min(a.cols, s.cols) };
+}
+
+/// Elementwise minimum across a list of reported sizes, or null if none have
+/// been reported yet.
+fn minSize(sizes: []const ClientSize) ?ClientSize {
+    var acc: ?ClientSize = null;
+    for (sizes) |s| acc = foldMinSize(acc, s);
+    return acc;
+}
+
+/// Elementwise minimum size across all attached clients (tmux
+/// `window-size smallest`): the PTY is sized so every active client can
+/// render it without truncation. Null when no client has reported a size.
+fn minClientSize(clients: []const *Client) ?ClientSize {
+    var acc: ?ClientSize = null;
+    for (clients) |cl| acc = foldMinSize(acc, .{ .rows = cl.rows, .cols = cl.cols });
+    return acc;
+}
 
 const Cfg = struct {
     socket_base: []const u8,
@@ -175,6 +210,11 @@ const Daemon = struct {
     // Tracks the latest OSC 0/2 window title from PTY output so it can be
     // re-emitted on re-attach (issue #6). Default-constructed; no allocation.
     title_tracker: title.TitleTracker = .{},
+    // PTY master fd and active terminal model, wired up once the daemon loop
+    // starts. Stored so client teardown (closeClient) can recompute the shared
+    // window size after a detach (issue #8). -1/null until the loop runs.
+    pty_fd: i32 = -1,
+    term: ?*terminal.DefaultTerminal = null,
 
     pub fn deinit(self: *Daemon) void {
         self.clients.deinit(self.alloc);
@@ -202,7 +242,31 @@ const Daemon = struct {
             self.shutdown();
             return true;
         }
+        // A client left; resize the PTY to the new minimum across the
+        // remaining clients so the session grows back when the smallest
+        // client detaches (issue #8).
+        self.applyClientSize();
         return false;
+    }
+
+    /// Resize the PTY (and terminal model) to the elementwise-minimum size
+    /// across all attached clients, so every active client can render the
+    /// session without truncation (tmux `window-size smallest`). No-op until
+    /// the daemon loop has wired up pty_fd/term, or while no client has
+    /// reported a size.
+    fn applyClientSize(self: *Daemon) void {
+        const term = self.term orelse return;
+        const size = minClientSize(self.clients.items) orelse return;
+        var ws: c.struct_winsize = .{
+            .ws_row = size.rows,
+            .ws_col = size.cols,
+            .ws_xpixel = 0,
+            .ws_ypixel = 0,
+        };
+        _ = c.ioctl(self.pty_fd, c.TIOCSWINSZ, &ws);
+        term.resize(size.cols, size.rows) catch |err| {
+            std.log.warn("failed to resize terminal to min client size err={s}", .{@errorName(err)});
+        };
     }
 
     pub fn handleInput(self: *Daemon, pty_fd: i32, payload: []const u8) !void {
@@ -215,7 +279,6 @@ const Daemon = struct {
     pub fn handleInit(
         self: *Daemon,
         client: *Client,
-        pty_fd: i32,
         term: *terminal.DefaultTerminal,
         payload: []const u8,
     ) !void {
@@ -223,14 +286,12 @@ const Daemon = struct {
 
         const resize = std.mem.bytesToValue(ipc.Resize, payload);
 
-        var ws: c.struct_winsize = .{
-            .ws_row = resize.rows,
-            .ws_col = resize.cols,
-            .ws_xpixel = 0,
-            .ws_ypixel = 0,
-        };
-        _ = c.ioctl(pty_fd, c.TIOCSWINSZ, &ws);
-        try term.resize(resize.cols, resize.rows);
+        // Record this client's size and resize the PTY to the minimum across
+        // all attached clients (issue #8), rather than unconditionally adopting
+        // the newest client's size.
+        client.cols = resize.cols;
+        client.rows = resize.rows;
+        self.applyClientSize();
 
         // Serialize terminal state BEFORE resize to capture correct cursor position.
         // Resizing triggers reflow which can move the cursor, and the shell's
@@ -274,19 +335,15 @@ const Daemon = struct {
         std.log.debug("init resize rows={d} cols={d}", .{ resize.rows, resize.cols });
     }
 
-    pub fn handleResize(self: *Daemon, pty_fd: i32, term: *terminal.DefaultTerminal, payload: []const u8) !void {
-        _ = self;
+    pub fn handleResize(self: *Daemon, client: *Client, payload: []const u8) !void {
         if (payload.len != @sizeOf(ipc.Resize)) return;
 
         const resize = std.mem.bytesToValue(ipc.Resize, payload);
-        var ws: c.struct_winsize = .{
-            .ws_row = resize.rows,
-            .ws_col = resize.cols,
-            .ws_xpixel = 0,
-            .ws_ypixel = 0,
-        };
-        _ = c.ioctl(pty_fd, c.TIOCSWINSZ, &ws);
-        try term.resize(resize.cols, resize.rows);
+        // Update this client's reported size and re-apply the shared minimum
+        // across all attached clients (issue #8).
+        client.cols = resize.cols;
+        client.rows = resize.rows;
+        self.applyClientSize();
         std.log.debug("resize rows={d} cols={d}", .{ resize.rows, resize.cols });
     }
 
@@ -1537,6 +1594,11 @@ fn daemonLoop(daemon: *Daemon, server_sock_fd: i32, pty_fd: i32) !void {
     var vt_stream = term.vtStream();
     defer vt_stream.deinit();
 
+    // Wire the PTY fd and terminal model onto the daemon so client teardown
+    // can recompute the shared window size after a detach (issue #8).
+    daemon.pty_fd = pty_fd;
+    daemon.term = &term;
+
     daemon_loop: while (daemon.running) {
         if (sigterm_received.swap(false, .acq_rel)) {
             std.log.info("SIGTERM received, shutting down gracefully session={s}", .{daemon.session_name});
@@ -1658,8 +1720,8 @@ fn daemonLoop(daemon: *Daemon, server_sock_fd: i32, pty_fd: i32) !void {
                 while (client.read_buf.next()) |msg| {
                     switch (msg.header.tag) {
                         .Input => try daemon.handleInput(pty_fd, msg.payload),
-                        .Init => try daemon.handleInit(client, pty_fd, &term, msg.payload),
-                        .Resize => try daemon.handleResize(pty_fd, &term, msg.payload),
+                        .Init => try daemon.handleInit(client, &term, msg.payload),
+                        .Resize => try daemon.handleResize(client, msg.payload),
                         .Detach => {
                             daemon.handleDetach(client, i);
                             break :clients_loop;
@@ -2252,6 +2314,35 @@ test "encodeSessionName and decodeSessionName are inverse operations" {
         defer alloc.free(decoded);
         try std.testing.expectEqualStrings(original, decoded);
     }
+}
+
+test "minSize returns null when no client has reported a size" {
+    const empty = [_]ClientSize{};
+    try std.testing.expect(minSize(&empty) == null);
+    const unset = [_]ClientSize{ .{ .rows = 0, .cols = 0 }, .{ .rows = 0, .cols = 80 }, .{ .rows = 24, .cols = 0 } };
+    try std.testing.expect(minSize(&unset) == null);
+}
+
+test "minSize returns the only reported size" {
+    const sizes = [_]ClientSize{.{ .rows = 24, .cols = 80 }};
+    const m = minSize(&sizes).?;
+    try std.testing.expectEqual(@as(u16, 24), m.rows);
+    try std.testing.expectEqual(@as(u16, 80), m.cols);
+}
+
+test "minSize takes the elementwise minimum across clients" {
+    // One client is shorter, the other narrower: each dimension's min wins.
+    const sizes = [_]ClientSize{ .{ .rows = 40, .cols = 80 }, .{ .rows = 24, .cols = 100 } };
+    const m = minSize(&sizes).?;
+    try std.testing.expectEqual(@as(u16, 24), m.rows);
+    try std.testing.expectEqual(@as(u16, 80), m.cols);
+}
+
+test "minSize ignores not-yet-reported clients" {
+    const sizes = [_]ClientSize{ .{ .rows = 50, .cols = 200 }, .{ .rows = 0, .cols = 0 }, .{ .rows = 30, .cols = 90 } };
+    const m = minSize(&sizes).?;
+    try std.testing.expectEqual(@as(u16, 30), m.rows);
+    try std.testing.expectEqual(@as(u16, 90), m.cols);
 }
 
 test {
