@@ -3,7 +3,7 @@
 
   inputs = {
     utils.url = "https://flakehub.com/f/numtide/flake-utils/0.1.102";
-    nixpkgs-master.url = "github:NixOS/nixpkgs/d233902339c02a9c334e7e593de68855ad26c4cb";
+    nixpkgs-master.url = "github:NixOS/nixpkgs/567a49d1913ce81ac6e9582e3553dd90a955875f";
     nixpkgs.url = "github:NixOS/nixpkgs/3e20095fe3c6cbb1ddcef89b26969a69a1570776";
     # Dedicated, never-followed nixpkgs for the Zig toolchain. Pinning zig
     # here (rather than taking it from the main `nixpkgs` input) means a
